@@ -1,15 +1,88 @@
 # 면접 연습 (InterviewPractice)
 
-React + Vite + Electron으로 만든 면접 연습용 데스크톱 앱입니다. 카메라로 자신을 보면서 질의에 답하고, 답변을 녹음·녹화해서 다시 들으며 검토합니다.
+React + Vite + Electron으로 만든 면접 연습용 데스크톱 앱입니다. 카메라로 자신을 보면서 질의에 답하고, 답변을 음성(.m4a)이나 영상(.mp4)으로 녹음해 다시 들으며 검토합니다.
 
-## 실행
+## 주요 기능
+
+- **면접 주제 관리**: 주제마다 제목, 설명, 질의 목록을 둡니다. 질의는 한 줄에 하나씩 붙여넣으면 됩니다.
+- **연습 흐름**: 시작 → 전체 화면 대기 카운트 → 질문 표시와 카메라 화면 → 자동 녹음(REC 표시)
+- **다시 듣기**: 녹음을 완료하면 바로 재생해 검토하고, 녹음 버튼으로 같은 질의를 다시 연습합니다.
+- **자동 / 수동 저장**: 녹음 완료 시 자동으로 저장하거나, 다시 들어 보고 원하는 녹음만 직접 저장합니다.
+- **단축키 변경**: 녹음 완료, 정지, 질의 이동, 영상/음성 이동 키를 모두 바꿀 수 있습니다.
+
+## 사용법
+
+1. 홈 화면 오른쪽 위의 **+ 주제 추가**를 눌러 주제를 만듭니다.
+   - 제목, 설명, 질의 목록(줄바꿈으로 구분, 빈 줄은 무시)을 입력합니다.
+   - 오른쪽 **개별 설정**에서 연습 방식을 정합니다.
+2. 주제 카드의 **시작**을 누르면 대기 카운트 후 첫 질의와 함께 녹음이 시작됩니다.
+3. 화면 아래 버튼이나 단축키로 진행합니다.
+
+| 버튼 | 동작 |
+|---|---|
+| ⏮ 이전 / ⏭ 다음 | 이전·다음 질의로 이동합니다. 녹음 중이면 녹음을 끝내고 이동하며, 자동 저장이면 저장합니다. 이동한 질의는 대기 카운트 후 녹음을 시작합니다. |
+| ⏺ 녹음 | 녹음 중에는 **녹음 중**으로 표시되고, 누르면 녹음이 완료됩니다. 다시 듣기 상태에서 누르면 같은 질의를 다시 녹음합니다. |
+| ⏸ 정지 | 녹음을 일시정지합니다. 다시 누르면 이어서 녹음합니다. |
+| 💾 저장 | 수동 저장 모드의 다시 듣기 화면에만 나옵니다. 이미 저장한 녹음이면 "이미 저장되었습니다"라고 안내합니다. |
+
+마지막 질의에서 **다음**을 누르면 종료 화면이 나옵니다. 저장 폴더 열기, 처음부터 다시, 목록으로 가기를 고를 수 있습니다.
+
+## 단축키 (기본값)
+
+| 동작 | 키 |
+|---|---|
+| 녹음 완료 | `Ctrl + Enter` |
+| 정지 / 재개 | `Space` |
+| 이전 질의 / 다음 질의 | `←` / `→` |
+| 영상/음성 뒤로 이동 / 앞으로 이동 (다시 듣기) | `Shift + ←` / `Shift + →` |
+
+모든 단축키와 영상/음성 이동 간격(기본 1초)은 **공통 설정**에서 바꿀 수 있습니다.
+
+## 설정
+
+### 개별 설정 (주제마다)
+
+| 항목 | 기본값 | 설명 |
+|---|---|---|
+| 출제 순서 | 무작위 | 무작위 / 순서대로. 무작위는 세션을 시작할 때 한 번만 섞으므로 이전 질의로 돌아갈 수 있습니다. |
+| 대기 카운트 | 5초 | 질의마다 녹음 전에 전체 화면으로 카운트다운합니다. 0이면 바로 녹음합니다. |
+| 최소 녹음 시간 | 1초 | 이 시간 이하로 녹음되면 저장하지 않습니다. 자동 저장과 수동 저장 모두 적용됩니다. |
+| 녹음 완료 시 자동 저장 | 켬 | 끄면 수동 저장 모드가 되어 다시 듣기 화면의 저장 버튼으로 저장합니다. |
+| 녹음 형식 | 음성 (.m4a) | 음성 (.m4a) / 영상 (.mp4). 연습 화면에는 어느 쪽이든 카메라가 보입니다. |
+
+### 공통 설정 (홈 화면의 설정)
+
+- 녹음 파일 저장 폴더 (기본 `~/Documents/InterviewPractice`)
+- 단축키
+- 영상/음성 이동 간격 (초)
+
+## 저장 규칙
+
+```
+{저장 폴더}/
+ └─ {주제이름}/
+     └─ {주제이름 yymmdd (n)}/          ← 연습 세션마다 하나, 같은 날이면 n 증가
+         ├─ {질의 앞 12자} (1).m4a
+         ├─ {질의 앞 12자} (2).mp4      ← 같은 질의를 다시 저장하면 n 증가
+         └─ ...
+```
+
+- 폴더는 **첫 녹음 파일을 저장할 때** 만들어집니다. 저장한 파일이 없으면 폴더도 생기지 않습니다.
+- 질의가 12자를 넘으면 앞 12자만 사용합니다.
+- 파일 이름에 쓸 수 없는 문자(`/ \ : * ? " < > |`)는 지웁니다.
+- 주제·설정 데이터는 `~/Library/Application Support/InterviewPractice/store.json`에 저장됩니다.
+
+## 개발
 
 ```bash
 npm install
 npm run dev        # 개발 모드 (Vite + Electron 자동 실행)
 npm run typecheck  # 타입 검사
-npm run preview    # 프로덕션 빌드 후 실행
+npm run build      # 타입 검사 + 빌드 (dist/, dist-electron/)
+npm run preview    # 빌드 후 Electron으로 실행
 ```
+
+처음 연습을 시작하면 macOS가 카메라·마이크 권한을 묻습니다. 거부했다면 **시스템 설정 → 개인정보 보호 및 보안**에서 허용해야 합니다.
 
 ## 패키징 (electron-builder)
 
@@ -19,20 +92,13 @@ npm run dist:mac:local  # 설치 파일 없이 .app만 빠르게 생성
 npm run dist:win        # Windows 설치 파일 (.exe, NSIS)
 ```
 
-- 결과물: `release/{버전}/`
-- 설정: `electron-builder.yml`, macOS 권한: `build/entitlements.mac.plist`
+- 결과물은 `release/{버전}/`에 생깁니다.
+- 설정 파일은 `electron-builder.yml`, macOS 권한 파일은 `build/entitlements.mac.plist`입니다.
 - 카메라·마이크 권한 안내 문구(`NSCameraUsageDescription`, `NSMicrophoneUsageDescription`)가 Info.plist에 들어갑니다.
-- 기본은 **ad-hoc 서명**이라 내 Mac에서는 바로 실행됩니다. 다른 Mac에 배포하면 Gatekeeper 경고가 뜨므로 우클릭 → 열기로 실행해야 합니다. 정식 배포하려면 Developer ID 인증서로 서명하고 공증을 받아야 합니다 (`electron-builder.yml`의 `identity: "-"` 줄을 지우면 키체인의 인증서로 서명).
-- 앱 아이콘은 `build/icon.icns`(macOS), `build/icon.ico`(Windows)를 넣으면 자동으로 사용됩니다.
-
-## 저장 위치
-
-- 녹음 파일: `~/Documents/InterviewPractice/` (공통 설정에서 변경 가능)
-  ```
-  {주제이름}/{주제이름 yymmdd (n)}/{질의 앞 12자} (n).m4a | .mp4
-  ```
-  폴더는 첫 녹음 파일을 저장할 때 만들어집니다.
-- 주제·설정 데이터: `~/Library/Application Support/InterviewPractice/store.json`
+- 기본은 **ad-hoc 서명**이라 이 Mac에서는 바로 실행됩니다.
+  - 다른 Mac에 설치하면 Gatekeeper 경고가 뜹니다. 우클릭 → **열기**로 실행해야 합니다.
+  - 정식으로 배포하려면 Developer ID 인증서로 서명하고 공증을 받아야 합니다. `electron-builder.yml`의 `identity: "-"` 줄을 지우면 키체인의 인증서로 서명합니다.
+- 앱 아이콘은 `build/icon.icns`(macOS), `build/icon.ico`(Windows)를 넣으면 자동으로 쓰입니다.
 
 ## 구조
 
@@ -40,8 +106,11 @@ npm run dist:win        # Windows 설치 파일 (.exe, NSIS)
 |---|---|
 | `electron/main.ts` | 창 생성, 카메라 권한, 주제·설정 저장, 녹음 파일 저장 규칙 |
 | `electron/preload.ts` | 렌더러에 `window.api` 노출 |
+| `src/types.ts` | 공통 타입과 기본 설정값 |
 | `src/screens/HomeScreen.tsx` | 주제 목록 |
-| `src/screens/TopicEditor.tsx` | 주제 생성·편집 + 주제별 개별 설정 |
-| `src/screens/SettingsModal.tsx` | 공통 설정 (저장 폴더, 단축키) |
-| `src/screens/PracticeScreen.tsx` | 연습 화면 (카운트다운, 카메라, 녹음, 다시 듣기) |
+| `src/screens/TopicEditor.tsx` | 주제 생성·편집과 개별 설정 |
+| `src/screens/SettingsModal.tsx` | 공통 설정 (저장 폴더, 단축키, 이동 간격) |
+| `src/screens/PracticeScreen.tsx` | 연습 화면 (카운트다운, 카메라, 녹음, 다시 듣기, 수동 저장) |
 | `src/lib/recorder.ts` | MediaRecorder 래퍼 (MP4/M4A 우선, 미지원 시 WebM) |
+| `src/lib/shortcuts.ts` | 단축키 문자열 변환과 비교 |
+| `src/components/` | 아이콘, 단축키 입력 칸 |
