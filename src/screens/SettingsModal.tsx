@@ -49,7 +49,7 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
         <div className="field">
           <span className="field-label">단축키</span>
           <div className="shortcut-table">
-            <span>녹음 완료</span>
+            <span>녹음 완료 / 다시 녹음</span>
             <ShortcutInput value={draft.shortcuts.complete} onChange={(v) => setShortcut('complete', v)} />
             <span>정지 / 재개</span>
             <ShortcutInput value={draft.shortcuts.pause} onChange={(v) => setShortcut('pause', v)} />

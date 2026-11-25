@@ -30,6 +30,10 @@ export function TopicEditor({ topic, onSave, onCancel }: Props) {
       title: title.trim(),
       description: description.trim(),
       questions,
+      // 남아 있는 질의의 학습 기록만 유지
+      questionMeta: Object.fromEntries(
+        questions.filter((q) => topic?.questionMeta?.[q]).map((q) => [q, topic!.questionMeta![q]]),
+      ),
       settings: {
         ...settings,
         countdownSec: Math.max(0, Math.round(settings.countdownSec)),

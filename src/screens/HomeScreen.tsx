@@ -1,5 +1,5 @@
 import type { Topic } from '../types'
-import { FolderIcon, GearIcon, PlayIcon, PlusIcon } from '../components/Icons'
+import { FlagIcon, FolderIcon, GearIcon, ListIcon, PlayIcon, PlusIcon } from '../components/Icons'
 
 interface Props {
   topics: Topic[]
@@ -7,11 +7,15 @@ interface Props {
   onEdit: (topic: Topic) => void
   onDelete: (topic: Topic) => void
   onStart: (topic: Topic) => void
+  /** 질의 목록 화면 열기 */
+  onOpen: (topic: Topic) => void
   onOpenSettings: () => void
   onOpenFolder: () => void
 }
 
-export function HomeScreen({ topics, onCreate, onEdit, onDelete, onStart, onOpenSettings, onOpenFolder }: Props) {
+const hardCount = (t: Topic) => t.questions.filter((q) => t.questionMeta?.[q]?.hard).length
+
+export function HomeScreen({ topics, onCreate, onEdit, onDelete, onStart, onOpen, onOpenSettings, onOpenFolder }: Props) {
   return (
     <div className="page">
       <header className="page-header">
@@ -41,7 +45,7 @@ export function HomeScreen({ topics, onCreate, onEdit, onDelete, onStart, onOpen
         <div className="topic-grid">
           {topics.map((t) => (
             <article key={t.id} className="topic-card">
-              <div className="topic-card-body" onClick={() => onStart(t)} role="button" tabIndex={0}>
+              <div className="topic-card-body" onClick={() => onOpen(t)} role="button" tabIndex={0} title="질의 목록 보기">
                 <h2>{t.title}</h2>
                 {t.description && <p className="topic-desc">{t.description}</p>}
                 <div className="topic-meta">
@@ -49,11 +53,19 @@ export function HomeScreen({ topics, onCreate, onEdit, onDelete, onStart, onOpen
                   <span>{t.settings.order === 'random' ? '무작위' : '순서대로'}</span>
                   <span>{t.settings.saveFormat === 'video' ? '영상' : '음성'}</span>
                   <span>{t.settings.saveEnabled ? '자동 저장' : '수동 저장'}</span>
+                  {hardCount(t) > 0 && (
+                    <span className="meta-hard">
+                      <FlagIcon size={12} filled /> 안 외워짐 {hardCount(t)}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="topic-card-actions">
                 <button className="btn primary" onClick={() => onStart(t)} disabled={t.questions.length === 0}>
-                  <PlayIcon size={16} /> 시작
+                  <PlayIcon size={16} /> 전체 시작
+                </button>
+                <button className="btn ghost" onClick={() => onOpen(t)}>
+                  <ListIcon size={16} /> 질의 목록
                 </button>
                 <button className="btn ghost" onClick={() => onEdit(t)}>
                   편집·설정

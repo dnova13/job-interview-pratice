@@ -206,7 +206,7 @@ textarea {
 
 .topic-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 16px;
 }
 
@@ -257,6 +257,7 @@ textarea {
 
 .topic-card-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 12px 18px 16px;
 }
@@ -815,4 +816,499 @@ textarea {
   color: var(--ok);
   border-color: var(--ok);
   background: rgba(62, 207, 142, 0.1);
+}
+
+/* ---------- 질의 목록 (주제 상세) ---------- */
+
+.page.detail {
+  padding-bottom: 0;
+}
+
+.detail-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.detail-title h1 {
+  margin: 2px 0 4px;
+}
+
+.detail-title .topic-desc {
+  margin: 0;
+}
+
+.meta-hard {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--warn) !important;
+}
+
+.filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-label {
+  font-size: 13px;
+  color: var(--muted);
+  margin-right: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 11px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--muted);
+}
+
+.chip.on {
+  background: rgba(91, 140, 255, 0.16);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.chip.hard.on {
+  background: rgba(245, 176, 65, 0.14);
+  border-color: var(--warn);
+}
+
+.chip svg {
+  color: var(--warn);
+}
+
+.filter-search {
+  width: 220px;
+  padding: 6px 10px;
+  font-size: 13px;
+  margin-left: auto;
+}
+
+.q-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 14px 8px;
+  font-size: 13px;
+}
+
+.q-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.q-list input[type='checkbox'],
+.q-check input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex: none;
+}
+
+.q-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 0 0;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.q-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.q-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 10px 12px;
+}
+
+.q-item.selected {
+  border-color: rgba(91, 140, 255, 0.6);
+  background: rgba(91, 140, 255, 0.07);
+}
+
+.q-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.q-no {
+  flex: none;
+  min-width: 22px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.q-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.stars {
+  display: inline-flex;
+  flex: none;
+  color: var(--border);
+}
+
+.stars > * {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+.stars.editable button {
+  cursor: pointer;
+}
+
+.stars.editable button:hover {
+  color: var(--muted);
+}
+
+.stars .on,
+.stars.editable button.on {
+  color: #f5c542;
+}
+
+.flag-btn,
+.memo-btn {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+
+.flag-btn.on {
+  color: var(--warn);
+}
+
+.memo-btn.has {
+  color: var(--accent);
+}
+
+.memo-btn.open {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.start-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px 20px;
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.start-bar .btn.link {
+  margin-left: 10px;
+}
+
+.start-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.order-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.order-toggle button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.order-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+
+.order-toggle button.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ---------- 연습 화면: 질의 목록 패널 ---------- */
+
+.practice-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.practice-actions .btn.on {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 24;
+}
+
+.q-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 90vw);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.35);
+}
+
+.q-drawer header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 12px 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.q-drawer header .muted {
+  font-size: 13px;
+  flex: 1;
+}
+
+.q-drawer ol {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.q-drawer li {
+  border-radius: 8px;
+  padding: 4px 6px 6px;
+}
+
+.q-drawer li:hover {
+  background: var(--surface-2);
+}
+
+.q-drawer li.current {
+  background: rgba(91, 140, 255, 0.14);
+}
+
+.q-drawer-item {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 4px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.q-drawer-item .q-no {
+  min-width: 30px;
+  text-align: left;
+  padding-top: 2px;
+}
+
+.q-drawer-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 42px;
+}
+
+.q-drawer-meta .flag-btn {
+  width: 26px;
+  height: 26px;
+}
+
+.badge-now {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+/* ---------- 연습 화면: 질문 패널의 표시·메모 ---------- */
+
+.question-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.question-marks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.question-marks .flag-btn {
+  width: 30px;
+  height: 30px;
+}
+
+.review-memo {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.review-memo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.review-memo-head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.review-memo .memo-input {
+  margin-top: 6px;
+}
+
+.review-memo-text {
+  margin: 6px 0 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: 0 8px 8px 0;
+  white-space: pre-wrap;
+  line-height: 1.6;
+  cursor: text;
+}
+
+.review-memo-empty {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---------- 질의 목록: 오른쪽 메모 패널 ---------- */
+
+.detail-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 16px;
+}
+
+.detail-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.memo-panel {
+  width: 340px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.memo-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.memo-panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.memo-panel-question {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.memo-panel-text {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: 0 8px 8px 0;
+  white-space: pre-wrap;
+  line-height: 1.6;
+  cursor: text;
+}
+
+.memo-panel-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.memo-panel-btn {
+  align-self: flex-end;
 }

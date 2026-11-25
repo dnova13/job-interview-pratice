@@ -16,11 +16,24 @@ export interface TopicSettings {
   saveFormat: SaveFormat
 }
 
+/** 질의별 학습 기록 */
+export interface QuestionMeta {
+  /** 중요도 0~5 (0은 미지정) */
+  importance: number
+  memo: string
+  /** 잘 안 외워지는 질의 표시 */
+  hard: boolean
+}
+
+export const EMPTY_QUESTION_META: QuestionMeta = { importance: 0, memo: '', hard: false }
+
 export interface Topic {
   id: string
   title: string
   description: string
   questions: string[]
+  /** 질의 문장을 키로 한 학습 기록 (질의를 편집해도 문장이 같으면 유지) */
+  questionMeta?: Record<string, QuestionMeta>
   settings: TopicSettings
   createdAt: number
   updatedAt: number
@@ -89,7 +102,7 @@ export const DEFAULT_TOPIC_SETTINGS: TopicSettings = {
 }
 
 export const DEFAULT_SHORTCUTS: Shortcuts = {
-  complete: 'Ctrl+Enter',
+  complete: 'Enter',
   pause: 'Space',
   prev: 'ArrowLeft',
   next: 'ArrowRight',

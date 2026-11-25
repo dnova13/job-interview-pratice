@@ -1,22 +1,33 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AppSettings, Topic } from '../types'
+import type { AppSettings, QuestionMeta, QuestionOrder, Topic } from '../types'
+import { EMPTY_QUESTION_META } from '../types'
+import { MemoField, StarRating } from './TopicDetail'
 import { Recorder, type RecordingResult } from '../lib/recorder'
 import { formatShortcut, matchShortcut } from '../lib/shortcuts'
 import { formatTime, shuffle } from '../lib/utils'
 import {
   CheckIcon,
   CloseIcon,
+  MemoIcon,
+  FlagIcon,
+  ListIcon,
   NextIcon,
   PauseIcon,
   PlayIcon,
   PrevIcon,
   RecordIcon,
+  RestartIcon,
   SaveIcon,
 } from '../components/Icons'
 
 interface Props {
   topic: Topic
+  /** 이번 연습에 쓸 질의 (전체 또는 목록에서 선택한 것) */
+  questions: string[]
+  order: QuestionOrder
   settings: AppSettings
+  /** 질의 목록 패널에서 중요도·안 외워짐 표시를 바꿀 때 */
+  onUpdateMeta: (question: string, patch: Partial<QuestionMeta>) => void
   onExit: () => void
 }
 
@@ -39,14 +50,17 @@ interface Toast {
   tone: 'ok' | 'warn' | 'error'
 }
 
-function buildOrder(topic: Topic): number[] {
-  const indices = topic.questions.map((_, i) => i)
-  return topic.settings.order === 'random' ? shuffle(indices) : indices
+function buildOrder(count: number, order: QuestionOrder): number[] {
+  const indices = Array.from({ length: count }, (_, i) => i)
+  return order === 'random' ? shuffle(indices) : indices
 }
 
-export function PracticeScreen({ topic, settings, onExit }: Props) {
+export function PracticeScreen({ topic, questions, order: orderMode, settings, onUpdateMeta, onExit }: Props) {
   const ts = topic.settings
-  const [order, setOrder] = useState<number[]>(() => buildOrder(topic))
+  const [order, setOrder] = useState<number[]>(() => buildOrder(questions.length, orderMode))
+  const [listOpen, setListOpen] = useState(false)
+  /** 다시 듣기 화면에서 메모 편집 중인지 */
+  const [memoEditing, setMemoEditing] = useState(false)
   const [pos, setPos] = useState(0)
   const [phase, setPhase] = useState<Phase>('preparing')
   const [countdown, setCountdown] = useState(ts.countdownSec)
@@ -67,7 +81,8 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
   /** 다시 듣기 플레이어 (영상이면 video, 음성이면 audio) */
   const playbackRef = useRef<HTMLMediaElement | null>(null)
 
-  const question = topic.questions[order[pos]] ?? ''
+  const question = questions[order[pos]] ?? ''
+  const questionMeta: QuestionMeta = { ...EMPTY_QUESTION_META, ...topic.questionMeta?.[question] }
   const total = order.length
 
   // ---------- 공통 유틸 ----------
@@ -79,6 +94,7 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
   }, [])
 
   const clearReview = useCallback(() => {
+    setMemoEditing(false)
     if (reviewUrlRef.current) URL.revokeObjectURL(reviewUrlRef.current)
     reviewUrlRef.current = null
     setReview(null)
@@ -246,6 +262,8 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
     if (phase === 'recording' || phase === 'paused') {
       void complete()
     } else if (phase === 'review') {
+      // 저장 중에는 다시 녹음하지 않음
+      if (busyRef.current) return
       beginCountdown(pos)
     }
   }, [beginCountdown, complete, phase, pos])
@@ -262,12 +280,11 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
     }
   }, [phase])
 
-  /** 이전/다음: 녹음 중이면 저장 후 이동, 완료 상태면 바로 이동 */
-  const move = useCallback(
-    (delta: number) =>
+  /** 지정한 질의로 이동: 녹음 중이면 저장 후 이동, 완료 상태면 바로 이동. total이면 종료 화면 */
+  const goTo = useCallback(
+    (target: number) =>
       runExclusive(async () => {
         if (phase === 'preparing' || phase === 'error') return
-        const target = phase === 'finished' ? total - 1 + (delta < 0 ? 0 : 1) : pos + delta
         if (target < 0) return
         cancelCountdown()
         if (phase === 'recording' || phase === 'paused') {
@@ -280,7 +297,24 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
         }
         beginCountdown(target)
       }),
-    [beginCountdown, clearReview, finishRecording, phase, pos, question, runExclusive, total],
+    [beginCountdown, clearReview, finishRecording, phase, question, runExclusive, total],
+  )
+
+  /** 이전/다음 */
+  const move = useCallback(
+    (delta: number) => goTo(phase === 'finished' ? total - 1 + (delta < 0 ? 0 : 1) : pos + delta),
+    [goTo, phase, pos, total],
+  )
+
+  /** 질의 목록에서 항목 선택 */
+  const jumpTo = useCallback(
+    (target: number) => {
+      setListOpen(false)
+      // 지금 녹음(대기) 중인 질의를 다시 고르면 그대로 진행
+      if (target === pos && (phase === 'recording' || phase === 'paused' || phase === 'countdown')) return
+      void goTo(target)
+    },
+    [goTo, phase, pos],
   )
 
   const exit = useCallback(
@@ -304,10 +338,19 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
     [phase, review],
   )
 
-  const restart = useCallback(() => {
-    setOrder(buildOrder(topic))
-    beginCountdown(0)
-  }, [beginCountdown, topic])
+  /** 처음부터 다시: 녹음 중이면 저장 규칙대로 마무리하고, 순서를 새로 정해 첫 질의부터 */
+  const restart = useCallback(
+    () =>
+      runExclusive(async () => {
+        if (phase === 'preparing' || phase === 'error') return
+        cancelCountdown()
+        if (phase === 'recording' || phase === 'paused') await finishRecording(question)
+        setListOpen(false)
+        setOrder(buildOrder(questions.length, orderMode))
+        beginCountdown(0)
+      }),
+    [beginCountdown, finishRecording, orderMode, phase, question, questions.length, runExclusive],
+  )
 
   // ---------- 카메라 준비 ----------
 
@@ -370,8 +413,8 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
 
   // ---------- 단축키 ----------
 
-  const handlers = useRef({ complete, move, togglePause, seek })
-  handlers.current = { complete, move, togglePause, seek }
+  const handlers = useRef({ onRecordButton, move, togglePause, seek })
+  handlers.current = { onRecordButton, move, togglePause, seek }
 
   useEffect(() => {
     const { shortcuts } = settings
@@ -379,7 +422,14 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
     const all = Object.values(shortcuts)
     const isShortcut = (e: KeyboardEvent) => all.some((s) => matchShortcut(e, s))
 
+    // 메모 등 글자를 입력하는 중에는 단축키를 쓰지 않음
+    const isTyping = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      return !!el?.closest?.('textarea, input:not([type="checkbox"]):not([type="radio"]), [contenteditable="true"]')
+    }
+
     const onKey = (e: KeyboardEvent) => {
+      if (isTyping(e)) return
       // 포커스된 버튼이 Space·Enter로 함께 눌리거나, 플레이어 진행 바가
       // 방향키를 자체 처리(아주 작은 단위 이동)하지 않도록 단축키는 기본 동작을 막음
       if (isShortcut(e)) e.preventDefault()
@@ -394,7 +444,8 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
       }
       if (e.repeat) return
       if (matchShortcut(e, shortcuts.complete)) {
-        void handlers.current.complete()
+        // 녹음 버튼과 같은 동작: 녹음 중이면 완료, 다시 듣기 중이면 다시 녹음
+        handlers.current.onRecordButton()
       } else if (matchShortcut(e, shortcuts.pause)) {
         handlers.current.togglePause()
       } else if (matchShortcut(e, shortcuts.prev)) {
@@ -407,6 +458,7 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
     }
     // 버튼의 Space 클릭은 keyup에서 일어나므로 keyup도 막음
     const onKeyUp = (e: KeyboardEvent) => {
+      if (isTyping(e)) return
       if (isShortcut(e)) e.preventDefault()
     }
     window.addEventListener('keydown', onKey, true)
@@ -444,12 +496,31 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
             {Math.min(pos + 1, total)} / {total}
           </span>
           <span className="muted">
-            {ts.saveEnabled ? '자동 저장' : '수동 저장'} · 저장 {savedCount}개
+            {orderMode === 'random' ? '무작위' : '순서대로'} · {ts.saveEnabled ? '자동 저장' : '수동 저장'} · 저장{' '}
+            {savedCount}개
           </span>
         </div>
-        <button className="icon-btn" onClick={() => void exit()} title="연습 종료" disabled={busy}>
-          <CloseIcon size={22} />
-        </button>
+        <div className="practice-actions">
+          <button
+            className={`btn ghost ${listOpen ? 'on' : ''}`}
+            onClick={() => setListOpen((o) => !o)}
+            disabled={phase === 'preparing'}
+            title="질의 목록을 보고 원하는 질의로 이동"
+          >
+            <ListIcon size={18} /> 질의 목록
+          </button>
+          <button
+            className="btn ghost"
+            onClick={() => void restart()}
+            disabled={busy || phase === 'preparing' || phase === 'error'}
+            title="순서를 새로 정해 첫 질의부터 다시 연습"
+          >
+            <RestartIcon size={16} /> 처음부터 다시
+          </button>
+          <button className="icon-btn" onClick={() => void exit()} title="연습 종료" disabled={busy}>
+            <CloseIcon size={22} />
+          </button>
+        </div>
       </header>
 
       <main className="stage">
@@ -472,8 +543,49 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
         </div>
 
         <section className="question-panel">
-          <span className="question-label">Q{Math.min(pos + 1, total)}</span>
+          <div className="question-head">
+            <span className="question-label">Q{Math.min(pos + 1, total)}</span>
+            {/* 중요도·안 외워짐은 녹음 중에도 바로 표시 가능 */}
+            {phase !== 'finished' && question && (
+              <div className="question-marks">
+                <StarRating
+                  value={questionMeta.importance}
+                  size={18}
+                  onChange={(v) => onUpdateMeta(question, { importance: v })}
+                />
+                <button
+                  className={`icon-btn flag-btn ${questionMeta.hard ? 'on' : ''}`}
+                  onClick={() => onUpdateMeta(question, { hard: !questionMeta.hard })}
+                  title={questionMeta.hard ? '안 외워짐 해제' : '잘 안 외워짐 표시'}
+                >
+                  <FlagIcon size={18} filled={questionMeta.hard} />
+                </button>
+              </div>
+            )}
+          </div>
           <p className="question-text">{phase === 'finished' ? '모든 질의를 마쳤습니다.' : question}</p>
+          {/* 메모는 답변을 마친 뒤(다시 듣기)에만 보여 주고 수정 가능 */}
+          {phase === 'review' && (
+            <div className="review-memo">
+              <div className="review-memo-head">
+                <span>
+                  <MemoIcon size={14} /> 메모
+                </span>
+                <button className="btn link" onClick={() => setMemoEditing((v) => !v)}>
+                  {memoEditing ? '완료' : questionMeta.memo.trim() ? '수정' : '메모 추가'}
+                </button>
+              </div>
+              {memoEditing ? (
+                <MemoField value={questionMeta.memo} onSave={(memo) => onUpdateMeta(question, { memo })} />
+              ) : questionMeta.memo.trim() ? (
+                <p className="review-memo-text" onClick={() => setMemoEditing(true)}>
+                  {questionMeta.memo}
+                </p>
+              ) : (
+                <p className="review-memo-empty">아직 메모가 없습니다.</p>
+              )}
+            </div>
+          )}
           {phase === 'review' && review?.kind === 'audio' && (
             <audio
               key={review.url}
@@ -515,7 +627,11 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
           className={`ctrl record ${isRecording ? 'active' : ''} ${phase === 'paused' ? 'paused' : ''}`}
           onClick={onRecordButton}
           disabled={busy || !(isRecording || phase === 'review')}
-          title={isRecording ? `클릭하거나 ${formatShortcut(settings.shortcuts.complete)}로 녹음 완료` : '다시 녹음'}
+          title={
+            isRecording
+              ? `클릭하거나 ${formatShortcut(settings.shortcuts.complete)}로 녹음 완료`
+              : `클릭하거나 ${formatShortcut(settings.shortcuts.complete)}로 다시 녹음`
+          }
         >
           <span className="record-icon">
             <RecordIcon size={30} />
@@ -540,7 +656,7 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
       </footer>
 
       <div className="shortcut-help">
-        완료 {formatShortcut(settings.shortcuts.complete)} · 정지/재개 {formatShortcut(settings.shortcuts.pause)} · 이전 {formatShortcut(settings.shortcuts.prev)} · 다음{' '}
+        완료/다시 녹음 {formatShortcut(settings.shortcuts.complete)} · 정지/재개 {formatShortcut(settings.shortcuts.pause)} · 이전 {formatShortcut(settings.shortcuts.prev)} · 다음{' '}
         {formatShortcut(settings.shortcuts.next)}
       </div>
 
@@ -594,7 +710,7 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
             <button className="btn ghost" onClick={() => void move(-1)}>
               마지막 질의로
             </button>
-            <button className="btn ghost" onClick={restart}>
+            <button className="btn ghost" onClick={() => void restart()}>
               처음부터 다시
             </button>
             <button className="btn primary" onClick={onExit}>
@@ -602,6 +718,53 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
             </button>
           </div>
         </div>
+      )}
+
+      {listOpen && (
+        <>
+          <div className="drawer-backdrop" onClick={() => setListOpen(false)} />
+          <aside className="q-drawer">
+            <header>
+              <strong>질의 목록</strong>
+              <span className="muted">
+                {orderMode === 'random' ? '무작위 순서' : '순서대로'} · {total}개
+              </span>
+              <button className="icon-btn" onClick={() => setListOpen(false)} aria-label="닫기">
+                <CloseIcon size={18} />
+              </button>
+            </header>
+            <ol>
+              {order.map((qi, i) => {
+                const q = questions[qi]
+                const meta = { ...EMPTY_QUESTION_META, ...topic.questionMeta?.[q] }
+                const current = i === pos && phase !== 'finished'
+                return (
+                  <li key={`${i}-${q}`} className={current ? 'current' : ''}>
+                    <button className="q-drawer-item" onClick={() => jumpTo(i)} disabled={busy}>
+                      <span className="q-no">Q{i + 1}</span>
+                      <span className="q-text">{q}</span>
+                    </button>
+                    <div className="q-drawer-meta">
+                      <StarRating
+                        value={meta.importance}
+                        size={14}
+                        onChange={(v) => onUpdateMeta(q, { importance: v })}
+                      />
+                      <button
+                        className={`icon-btn flag-btn ${meta.hard ? 'on' : ''}`}
+                        onClick={() => onUpdateMeta(q, { hard: !meta.hard })}
+                        title={meta.hard ? '안 외워짐 해제' : '잘 안 외워짐 표시'}
+                      >
+                        <FlagIcon size={15} filled={meta.hard} />
+                      </button>
+                      {current && <span className="badge-now">진행 중</span>}
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+          </aside>
+        </>
       )}
 
       {toast && <div className={`toast ${toast.tone}`}>{toast.text}</div>}
