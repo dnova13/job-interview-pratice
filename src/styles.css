@@ -451,7 +451,7 @@ textarea {
 
 .shortcut-table {
   display: grid;
-  grid-template-columns: 100px 1fr;
+  grid-template-columns: max-content 1fr;
   gap: 8px 12px;
   align-items: center;
   font-size: 14px;
@@ -533,6 +533,11 @@ textarea {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* display:block이 hidden 속성을 덮어쓰지 않도록 (녹화본 재생 중 실시간 카메라 숨김) */
+.camera video[hidden] {
+  display: none;
 }
 
 .camera video.live {
@@ -796,4 +801,18 @@ textarea {
   from {
     opacity: 0;
   }
+}
+
+/* 수동 저장 버튼 (다시 듣기) */
+.save-btn {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.save-btn.saved {
+  color: var(--ok);
+  border-color: var(--ok);
+  background: rgba(62, 207, 142, 0.1);
 }

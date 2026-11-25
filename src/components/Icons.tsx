@@ -73,7 +73,21 @@ export const FolderIcon = ({ size }: IconProps) => (
   </svg>
 )
 
-export const CloseIcon = ({ size }: IconProps) => (
+export const SaveIcon = ({ size }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+    <polyline points="17 21 17 13 7 13 7 21" />
+    <polyline points="7 3 7 8 15 8" />
+  </svg>
+)
+
+export const CheckIcon = ({ size }: IconProps) => (
+  <svg {...base(size)}>
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+)
+
+export const CloseIcon =({ size }: IconProps) => (
   <svg {...base(size)}>
     <line x1="18" y1="6" x2="6" y2="18" />
     <line x1="6" y1="6" x2="18" y2="18" />

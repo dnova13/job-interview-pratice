@@ -9,7 +9,7 @@ import type {
   StoreData,
   Topic,
 } from '../src/types'
-import { DEFAULT_SHORTCUTS } from '../src/types'
+import { DEFAULT_SEEK_STEP_SEC, DEFAULT_SHORTCUTS } from '../src/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -22,7 +22,11 @@ const MAX_QUESTION_CHARS = 12
 function defaultStore(): StoreData {
   return {
     topics: [],
-    settings: { saveRoot: DEFAULT_SAVE_ROOT, shortcuts: { ...DEFAULT_SHORTCUTS } },
+    settings: {
+      saveRoot: DEFAULT_SAVE_ROOT,
+      shortcuts: { ...DEFAULT_SHORTCUTS },
+      seekStepSec: DEFAULT_SEEK_STEP_SEC,
+    },
   }
 }
 
@@ -36,6 +40,10 @@ async function readStore(): Promise<StoreData> {
       settings: {
         saveRoot: parsed.settings?.saveRoot || base.settings.saveRoot,
         shortcuts: { ...base.settings.shortcuts, ...parsed.settings?.shortcuts },
+        seekStepSec:
+          typeof parsed.settings?.seekStepSec === 'number' && parsed.settings.seekStepSec > 0
+            ? parsed.settings.seekStepSec
+            : base.settings.seekStepSec,
       },
     }
   } catch {

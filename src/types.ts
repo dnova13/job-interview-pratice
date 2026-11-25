@@ -33,13 +33,21 @@ export interface Shortcuts {
   pause: string
   prev: string
   next: string
+  /** 다시 듣기: 뒤로 이동 */
+  seekBack: string
+  /** 다시 듣기: 앞으로 이동 */
+  seekForward: string
 }
 
 /** 공통 설정 */
 export interface AppSettings {
   saveRoot: string
   shortcuts: Shortcuts
+  /** 다시 듣기에서 한 번에 이동하는 시간(초) */
+  seekStepSec: number
 }
+
+export const DEFAULT_SEEK_STEP_SEC = 1
 
 export interface StoreData {
   topics: Topic[]
@@ -85,4 +93,6 @@ export const DEFAULT_SHORTCUTS: Shortcuts = {
   pause: 'Space',
   prev: 'ArrowLeft',
   next: 'ArrowRight',
+  seekBack: 'Shift+ArrowLeft',
+  seekForward: 'Shift+ArrowRight',
 }

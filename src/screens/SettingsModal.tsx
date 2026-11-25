@@ -57,6 +57,10 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
             <ShortcutInput value={draft.shortcuts.prev} onChange={(v) => setShortcut('prev', v)} />
             <span>다음 질의</span>
             <ShortcutInput value={draft.shortcuts.next} onChange={(v) => setShortcut('next', v)} />
+            <span>영상/음성 뒤로 이동</span>
+            <ShortcutInput value={draft.shortcuts.seekBack} onChange={(v) => setShortcut('seekBack', v)} />
+            <span>영상/음성 앞으로 이동</span>
+            <ShortcutInput value={draft.shortcuts.seekForward} onChange={(v) => setShortcut('seekForward', v)} />
           </div>
           {hasDuplicate && <span className="field-error">같은 단축키가 중복되어 있습니다.</span>}
           <button
@@ -67,11 +71,28 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
           </button>
         </div>
 
+        <label className="field">
+          <span className="field-label">영상/음성 이동 간격 (초)</span>
+          <input
+            type="number"
+            min={0.5}
+            max={60}
+            step={0.5}
+            value={draft.seekStepSec}
+            onChange={(e) => setDraft((d) => ({ ...d, seekStepSec: Number(e.target.value) }))}
+          />
+          <span className="field-hint">녹음 완료 후 다시 들을 때 영상/음성 뒤로·앞으로 이동 단축키로 움직이는 시간입니다.</span>
+        </label>
+
         <footer className="modal-footer">
           <button className="btn ghost" onClick={onClose}>
             취소
           </button>
-          <button className="btn primary" disabled={hasDuplicate} onClick={() => onSave(draft)}>
+          <button
+            className="btn primary"
+            disabled={hasDuplicate || !(draft.seekStepSec > 0)}
+            onClick={() => onSave(draft)}
+          >
             저장
           </button>
         </footer>

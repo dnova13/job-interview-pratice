@@ -123,23 +123,33 @@ export function TopicEditor({ topic, onSave, onCancel }: Props) {
             <span className="field-hint">이 시간 이하로 녹음되면 파일로 저장하지 않습니다.</span>
           </label>
 
-          <label className="field checkbox">
-            <input type="checkbox" checked={settings.saveEnabled} onChange={(e) => set('saveEnabled', e.target.checked)} />
-            <span>녹음 파일 저장</span>
-          </label>
+          <div className="field">
+            <label className="field checkbox">
+              <input
+                type="checkbox"
+                checked={settings.saveEnabled}
+                onChange={(e) => set('saveEnabled', e.target.checked)}
+              />
+              <span>녹음 완료 시 자동 저장</span>
+            </label>
+            <span className="field-hint">
+              {settings.saveEnabled
+                ? '녹음을 완료하거나 이전·다음으로 넘어가면 자동으로 파일을 저장합니다.'
+                : '자동으로 저장하지 않습니다. 녹음 완료 후 다시 듣기 화면의 저장 버튼으로 원하는 녹음만 저장합니다.'}
+            </span>
+          </div>
 
-          <div className={`field ${settings.saveEnabled ? '' : 'disabled'}`}>
-            <span className="field-label">저장 형식</span>
+          {/* 저장 형식은 수동 저장에도 쓰이므로 자동 저장 여부와 관계없이 선택 가능 */}
+          <div className="field">
+            <span className="field-label">녹음 형식</span>
             <div className="segmented">
               <button
-                disabled={!settings.saveEnabled}
                 className={settings.saveFormat === 'audio' ? 'on' : ''}
                 onClick={() => set('saveFormat', 'audio')}
               >
                 음성 (.m4a)
               </button>
               <button
-                disabled={!settings.saveEnabled}
                 className={settings.saveFormat === 'video' ? 'on' : ''}
                 onClick={() => set('saveFormat', 'video')}
               >

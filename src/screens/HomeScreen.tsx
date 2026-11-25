@@ -17,6 +17,9 @@ export function HomeScreen({ topics, onCreate, onEdit, onDelete, onStart, onOpen
       <header className="page-header">
         <h1>면접 연습</h1>
         <div className="header-actions">
+          <button className="btn primary" onClick={onCreate} title="새 면접 주제 추가">
+            <PlusIcon size={18} /> 주제 추가
+          </button>
           <button className="btn ghost" onClick={onOpenFolder} title="저장 폴더 열기">
             <FolderIcon size={18} /> 저장 폴더
           </button>
@@ -44,7 +47,8 @@ export function HomeScreen({ topics, onCreate, onEdit, onDelete, onStart, onOpen
                 <div className="topic-meta">
                   <span>질의 {t.questions.length}개</span>
                   <span>{t.settings.order === 'random' ? '무작위' : '순서대로'}</span>
-                  <span>{t.settings.saveEnabled ? (t.settings.saveFormat === 'video' ? '영상 저장' : '음성 저장') : '저장 안 함'}</span>
+                  <span>{t.settings.saveFormat === 'video' ? '영상' : '음성'}</span>
+                  <span>{t.settings.saveEnabled ? '자동 저장' : '수동 저장'}</span>
                 </div>
               </div>
               <div className="topic-card-actions">
@@ -65,10 +69,12 @@ export function HomeScreen({ topics, onCreate, onEdit, onDelete, onStart, onOpen
               </div>
             </article>
           ))}
+          {/* 주제 추가는 상단 헤더 버튼으로 대체 (목록 끝 추가 카드는 사용 안 함)
           <button className="topic-card add-card" onClick={onCreate} aria-label="주제 추가">
             <PlusIcon size={36} />
             <span>주제 추가</span>
           </button>
+          */}
         </div>
       )}
     </div>

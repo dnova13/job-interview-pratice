@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppSettings, Topic } from '../types'
 import { Recorder, type RecordingResult } from '../lib/recorder'
 import { formatShortcut, matchShortcut } from '../lib/shortcuts'
 import { formatTime, shuffle } from '../lib/utils'
-import { CloseIcon, NextIcon, PauseIcon, PlayIcon, PrevIcon, RecordIcon } from '../components/Icons'
+import {
+  CheckIcon,
+  CloseIcon,
+  NextIcon,
+  PauseIcon,
+  PlayIcon,
+  PrevIcon,
+  RecordIcon,
+  SaveIcon,
+} from '../components/Icons'
 
 interface Props {
   topic: Topic
@@ -17,6 +26,11 @@ interface Review {
   url: string
   kind: 'audio' | 'video'
   durationMs: number
+  blob: Blob
+  ext: string
+  question: string
+  /** 저장된 파일 이름 (아직 저장 안 했으면 null) */
+  savedName: string | null
 }
 
 interface Toast {
@@ -50,6 +64,8 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
   const countdownTokenRef = useRef(0)
   const busyRef = useRef(false)
   const reviewUrlRef = useRef<string | null>(null)
+  /** 다시 듣기 플레이어 (영상이면 video, 음성이면 audio) */
+  const playbackRef = useRef<HTMLMediaElement | null>(null)
 
   const question = topic.questions[order[pos]] ?? ''
   const total = order.length
@@ -119,37 +135,48 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
     [clearReview, startRecording, ts.countdownSec],
   )
 
-  /** 녹음을 끝내고, 조건에 맞으면 파일로 저장 */
-  const finishRecording = useCallback(
-    async (questionText: string): Promise<RecordingResult | null> => {
-      const rec = recorderRef.current
-      if (!rec) return null
-      recorderRef.current = null
-      const result = await rec.stop()
-
-      if (!ts.saveEnabled) return result
-      if (result.durationMs <= ts.minRecordSec * 1000) {
-        showToast(`${ts.minRecordSec}초 이하로 녹음되어 저장하지 않았습니다.`, 'warn')
-        return result
-      }
+  /** 녹음 데이터를 파일로 저장. 성공하면 파일 이름, 실패하면 null */
+  const saveBlob = useCallback(
+    async (blob: Blob, ext: string, questionText: string): Promise<string | null> => {
       try {
         const saved = await window.api.saveRecording({
           saveRoot: settings.saveRoot,
           topicTitle: topic.title,
           sessionDir: sessionDirRef.current,
           question: questionText,
-          ext: result.ext,
-          data: await result.blob.arrayBuffer(),
+          ext,
+          data: await blob.arrayBuffer(),
         })
         sessionDirRef.current = saved.sessionDir
         setSavedCount((c) => c + 1)
-        showToast(`저장됨: ${saved.fileName}`)
+        return saved.fileName
       } catch (err) {
         showToast(`저장 실패: ${(err as Error).message}`, 'error')
+        return null
       }
-      return result
     },
-    [settings.saveRoot, showToast, topic.title, ts.minRecordSec, ts.saveEnabled],
+    [settings.saveRoot, showToast, topic.title],
+  )
+
+  /** 녹음을 끝내고, 자동 저장이면 조건에 맞을 때 파일로 저장 */
+  const finishRecording = useCallback(
+    async (questionText: string): Promise<{ result: RecordingResult; savedName: string | null } | null> => {
+      const rec = recorderRef.current
+      if (!rec) return null
+      recorderRef.current = null
+      const result = await rec.stop()
+
+      // 수동 저장 모드: 저장하지 않고 다시 듣기 화면의 저장 버튼으로 저장
+      if (!ts.saveEnabled) return { result, savedName: null }
+      if (result.durationMs <= ts.minRecordSec * 1000) {
+        showToast(`${ts.minRecordSec}초 이하로 녹음되어 저장하지 않았습니다.`, 'warn')
+        return { result, savedName: null }
+      }
+      const savedName = await saveBlob(result.blob, result.ext, questionText)
+      if (savedName) showToast(`저장됨: ${savedName}`)
+      return { result, savedName }
+    },
+    [saveBlob, showToast, ts.minRecordSec, ts.saveEnabled],
   )
 
   /** 진행 중인 작업이 겹치지 않도록 한 번에 하나만 실행 */
@@ -172,15 +199,46 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
     () =>
       runExclusive(async () => {
         if (phase !== 'recording' && phase !== 'paused') return
-        const result = await finishRecording(question)
-        if (!result) return
+        const finished = await finishRecording(question)
+        if (!finished) return
+        const { result, savedName } = finished
         const url = URL.createObjectURL(result.blob)
         reviewUrlRef.current = url
-        setReview({ url, kind: ts.saveFormat, durationMs: result.durationMs })
+        setReview({
+          url,
+          kind: ts.saveFormat,
+          durationMs: result.durationMs,
+          blob: result.blob,
+          ext: result.ext,
+          question,
+          savedName,
+        })
         setElapsed(result.durationMs)
         setPhase('review')
       }),
     [finishRecording, phase, question, runExclusive, ts.saveFormat],
+  )
+
+  /** 수동 저장 모드: 다시 듣기 중인 녹음을 저장 (이미 저장했으면 알림만) */
+  const saveReview = useCallback(
+    () =>
+      runExclusive(async () => {
+        if (phase !== 'review' || !review) return
+        if (review.savedName) {
+          showToast(`이미 저장되었습니다: ${review.savedName}`, 'warn')
+          return
+        }
+        // 자동 저장과 같은 최소 녹음 시간 기준 적용
+        if (review.durationMs <= ts.minRecordSec * 1000) {
+          showToast(`${ts.minRecordSec}초 이하로 녹음되어 저장할 수 없습니다.`, 'warn')
+          return
+        }
+        const savedName = await saveBlob(review.blob, review.ext, review.question)
+        if (!savedName) return
+        setReview((r) => (r && r.url === review.url ? { ...r, savedName } : r))
+        showToast(`저장되었습니다: ${savedName}`)
+      }),
+    [phase, review, runExclusive, saveBlob, showToast, ts.minRecordSec],
   )
 
   /** 녹음 버튼: 녹음 중이면 완료, 다시 듣기 상태면 같은 질의 다시 녹음 */
@@ -233,6 +291,17 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
         onExit()
       }),
     [finishRecording, onExit, phase, question, runExclusive],
+  )
+
+  /** 다시 듣기 플레이어를 지정한 초만큼 앞뒤로 이동 */
+  const seek = useCallback(
+    (deltaSec: number) => {
+      const el = playbackRef.current
+      if (phase !== 'review' || !el) return
+      const end = Number.isFinite(el.duration) ? el.duration : (review?.durationMs ?? 0) / 1000
+      el.currentTime = Math.min(Math.max(0, el.currentTime + deltaSec), Math.max(0, end))
+    },
+    [phase, review],
   )
 
   const restart = useCallback(() => {
@@ -301,17 +370,28 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
 
   // ---------- 단축키 ----------
 
-  const handlers = useRef({ complete, move, togglePause })
-  handlers.current = { complete, move, togglePause }
+  const handlers = useRef({ complete, move, togglePause, seek })
+  handlers.current = { complete, move, togglePause, seek }
 
   useEffect(() => {
     const { shortcuts } = settings
-    const all = [shortcuts.complete, shortcuts.pause, shortcuts.prev, shortcuts.next]
+    const step = settings.seekStepSec
+    const all = Object.values(shortcuts)
     const isShortcut = (e: KeyboardEvent) => all.some((s) => matchShortcut(e, s))
 
     const onKey = (e: KeyboardEvent) => {
-      // 포커스된 버튼이 Space·Enter로 함께 눌리지 않도록 단축키는 기본 동작을 막음
+      // 포커스된 버튼이 Space·Enter로 함께 눌리거나, 플레이어 진행 바가
+      // 방향키를 자체 처리(아주 작은 단위 이동)하지 않도록 단축키는 기본 동작을 막음
       if (isShortcut(e)) e.preventDefault()
+      // 이동 단축키는 꾹 누르고 있으면 계속 이동
+      if (matchShortcut(e, shortcuts.seekBack)) {
+        handlers.current.seek(-step)
+        return
+      }
+      if (matchShortcut(e, shortcuts.seekForward)) {
+        handlers.current.seek(step)
+        return
+      }
       if (e.repeat) return
       if (matchShortcut(e, shortcuts.complete)) {
         void handlers.current.complete()
@@ -363,11 +443,9 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
           <span className="progress">
             {Math.min(pos + 1, total)} / {total}
           </span>
-          {ts.saveEnabled ? (
-            <span className="muted">저장 {savedCount}개</span>
-          ) : (
-            <span className="muted">파일 저장 안 함</span>
-          )}
+          <span className="muted">
+            {ts.saveEnabled ? '자동 저장' : '수동 저장'} · 저장 {savedCount}개
+          </span>
         </div>
         <button className="icon-btn" onClick={() => void exit()} title="연습 종료" disabled={busy}>
           <CloseIcon size={22} />
@@ -378,7 +456,14 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
         <div className={`camera ${phase === 'recording' ? 'is-recording' : ''}`}>
           <video ref={videoRef} className="live" autoPlay muted playsInline hidden={showRecordedVideo} />
           {showRecordedVideo && review && (
-            <video key={review.url} className="playback" src={review.url} controls autoPlay />
+            <video
+              key={review.url}
+              ref={playbackRef as React.Ref<HTMLVideoElement>}
+              className="playback"
+              src={review.url}
+              controls
+              autoPlay
+            />
           )}
           <div className="camera-top">
             {statusBadge}
@@ -390,11 +475,31 @@ export function PracticeScreen({ topic, settings, onExit }: Props) {
           <span className="question-label">Q{Math.min(pos + 1, total)}</span>
           <p className="question-text">{phase === 'finished' ? '모든 질의를 마쳤습니다.' : question}</p>
           {phase === 'review' && review?.kind === 'audio' && (
-            <audio key={review.url} className="audio-player" src={review.url} controls autoPlay />
+            <audio
+              key={review.url}
+              ref={playbackRef as React.Ref<HTMLAudioElement>}
+              className="audio-player"
+              src={review.url}
+              controls
+              autoPlay
+            />
+          )}
+          {/* 수동 저장 모드에서만 저장 버튼 표시 (자동 저장일 때는 없음) */}
+          {phase === 'review' && review && !ts.saveEnabled && (
+            <button
+              className={`btn save-btn ${review.savedName ? 'saved' : 'primary'}`}
+              onClick={() => void saveReview()}
+              disabled={busy}
+            >
+              {review.savedName ? <CheckIcon size={18} /> : <SaveIcon size={18} />}
+              {review.savedName ? `저장됨 · ${review.savedName}` : `이 ${review.kind === 'video' ? '영상' : '음성'} 저장`}
+            </button>
           )}
           {phase === 'review' && (
             <p className="hint">
-              다시 들으며 문제점을 확인하세요. 녹음 버튼을 누르면 같은 질의로 다시 연습합니다.
+              다시 들으며 문제점을 확인하세요. {formatShortcut(settings.shortcuts.seekBack)} /{' '}
+              {formatShortcut(settings.shortcuts.seekForward)}로 {settings.seekStepSec}초씩 이동합니다. 녹음 버튼을
+              누르면 같은 질의로 다시 연습합니다.
             </p>
           )}
         </section>
