@@ -1,0 +1,47 @@
+# electron-builder 패키징 설정
+appId: com.interviewpractice.app
+productName: InterviewPractice
+copyright: Copyright © 2026
+
+directories:
+  output: release/${version}
+  buildResources: build
+
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+
+asar: true
+
+mac:
+  category: public.app-category.education
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # 개발자 인증서가 없으면 ad-hoc 서명("-") 사용. Developer ID가 있으면 이 줄을 지우면 자동으로 찾아서 서명
+  identity: "-"
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSCameraUsageDescription: 면접 연습 중 답변하는 모습을 화면에 보여주고 녹화하기 위해 카메라를 사용합니다.
+    NSMicrophoneUsageDescription: 면접 답변을 녹음하기 위해 마이크를 사용합니다.
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+
+dmg:
+  title: ${productName} ${version}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: 면접 연습
