@@ -1,0 +1,96 @@
+# 자동 릴리스
+# - main에 푸시하면 macOS·Windows 설치 파일을 만들어 GitHub Releases에 올림
+# - 버전은 자동: package.json의 "주.부" + 이 워크플로 실행 번호 (예: 0.1.0 → 0.1.17)
+#   태그(v0.1.17)와 Release도 워크플로가 만듦. 저장소의 package.json은 바꾸지 않음
+# - 문서(.md, docs/)만 바뀐 푸시는 건너뜀
+# - 큰 변경으로 버전을 올리고 싶으면 package.json의 주·부 번호만 고치면 됨 (예: 0.2.0)
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 연달아 푸시하면 이전 실행은 취소하고 마지막 것만 릴리스
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          echo "version=$base.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            script: dist:mac
+          - os: windows-latest
+            script: dist:win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
+
+      # 설치 파일 이름과 앱 정보에 자동 버전을 넣음 (빌드 머신 안에서만 바꾸고 커밋하지 않음)
+      - name: 버전 적용
+        run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
+
+      # 업로드는 아래 release 작업에서 하므로 electron-builder의 자동 게시는 끔
+      - name: 패키징
+        run: npm run ${{ matrix.script }} -- --publish never
+        env:
+          # 키체인 인증서를 찾지 않고 electron-builder.yml의 설정(ad-hoc 서명)을 그대로 씀
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: |
+            release/*/*.dmg
+            release/*/*.zip
+            release/*/*.exe
+          if-no-files-found: error
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # 태그가 없으면 이 커밋에 새로 만들고, 그 태그에 Release를 붙임
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: v${{ needs.version.outputs.version }}
+          files: artifacts/**/*
+          generate_release_notes: true
