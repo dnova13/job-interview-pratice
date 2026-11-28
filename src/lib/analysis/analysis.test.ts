@@ -169,16 +169,16 @@ describe('computeMetrics', () => {
 })
 
 describe('scoreMetrics', () => {
-  it('10초보다 짧으면 점수를 내지 않음', () => {
+  it('최소 녹화/녹음 시간 이하이면 점수를 내지 않음', () => {
     const m = computeMetrics(audioOf([{ sec: 5, voiced: true }]), [], BASE, 5000)
-    const r = scoreMetrics(m)
+    const r = scoreMetrics(m, 5)
     expect(r.overall).toBeNull()
     expect(r.advice[0].key).toBe('short')
   })
 
   it('얼굴이 없으면 시선·자세는 측정 불가, 목소리 점수만으로 종합', () => {
     const m = computeMetrics(audioOf([{ sec: 20, voiced: true }]), [], BASE, 20000)
-    const r = scoreMetrics(m)
+    const r = scoreMetrics(m, 1)
     expect(r.categories.find((c) => c.key === 'gaze')!.score).toBeNull()
     expect(r.categories.find((c) => c.key === 'voice')!.score).not.toBeNull()
     expect(r.overall).not.toBeNull()
@@ -191,7 +191,7 @@ describe('scoreMetrics', () => {
       return ph < 600 ? -12 * Math.sin((Math.PI * ph) / 600) : 0
     })
     const audio = audioOf([{ sec: 30, voiced: true, f0: (t) => 150 + 40 * Math.sin(t / 700) }])
-    const r = scoreMetrics(computeMetrics(audio, face, BASE, 30000))
+    const r = scoreMetrics(computeMetrics(audio, face, BASE, 30000), 1)
     const posture = r.categories.find((c) => c.key === 'posture')!
     expect(posture.score!).toBeLessThan(80)
     expect(r.advice.some((a) => a.key === 'nodsPerMin')).toBe(true)

@@ -120,7 +120,7 @@ export function TopicEditor({ topic, onSave, onCancel }: Props) {
           </label>
 
           <label className="field">
-            <span className="field-label">최소 녹음 시간 (초)</span>
+            <span className="field-label">최소 녹화/녹음 시간 (초)</span>
             <input
               type="number"
               min={0}
@@ -128,7 +128,7 @@ export function TopicEditor({ topic, onSave, onCancel }: Props) {
               value={settings.minRecordSec}
               onChange={(e) => set('minRecordSec', Number(e.target.value))}
             />
-            <span className="field-hint">이 시간 이하로 녹음되면 파일로 저장하지 않습니다.</span>
+            <span className="field-hint">이 시간 이하로 녹화·녹음되면 파일로 저장하지 않고 점수도 내지 않습니다. (영상·음성 모두)</span>
           </label>
 
           <div className="field">

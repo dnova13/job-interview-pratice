@@ -42,9 +42,6 @@ export const CATEGORY_LABELS: Record<CategoryKey, string> = {
   posture: '자세',
 }
 
-/** 이보다 짧은 답변은 점수를 내지 않음 */
-export const MIN_ANALYSIS_SEC = 10
-
 /**
  * 범위 안이면 100점. 벗어나면 벗어난 만큼 직선으로 깎아
  * 기준값 크기만큼 벗어나면 0점 (예: 최대 4회 기준이면 8회에서 0점)
@@ -213,9 +210,13 @@ function items(m: Metrics): Item[] {
   ]
 }
 
-export function scoreMetrics(m: Metrics): AnalysisResult {
+/**
+ * 지표를 점수로 바꿈.
+ * minSec: 주제 설정의 최소 녹화/녹음 시간. 이 시간 이하인 답변은 저장하지 않는 것과 같은 기준으로 점수도 내지 않음
+ */
+export function scoreMetrics(m: Metrics, minSec: number): AnalysisResult {
   const all = items(m)
-  const tooShort = m.durationSec < MIN_ANALYSIS_SEC
+  const tooShort = m.durationSec <= minSec
   // 얼굴을 절반 이상 못 찾았으면 시선·자세는 측정 불가
   const faceOk = m.faceDetectedRatio >= 0.5
 
@@ -249,7 +250,7 @@ export function scoreMetrics(m: Metrics): AnalysisResult {
     .slice(0, 3)
     .map((s) => ({ key: s.key, text: s.advice(s.value!) }))
 
-  if (tooShort) advice.unshift({ key: 'short', text: `${MIN_ANALYSIS_SEC}초 이상 답변하면 점수를 계산합니다.` })
+  if (tooShort) advice.unshift({ key: 'short', text: `${minSec}초보다 길게 답변하면 점수를 계산합니다.` })
   else if (!faceOk)
     advice.unshift({
       key: 'face',
@@ -356,8 +357,9 @@ export function metricRows(m: Metrics): MetricRow[] {
  * 여러 답변의 지표를 하나로 합침 (세션 종합용).
  * 횟수는 더한 뒤 분당 횟수를 다시 계산하고, 나머지는 답변 길이로 가중 평균
  */
-export function combineMetrics(list: Metrics[]): Metrics | null {
-  const ms = list.filter((m) => m.durationSec >= MIN_ANALYSIS_SEC)
+export function combineMetrics(list: Metrics[], minSec: number): Metrics | null {
+  // 점수를 낼 때와 같은 기준(최소 녹화/녹음 시간)을 넘는 답변만 합침
+  const ms = list.filter((m) => m.durationSec > minSec)
   if (ms.length === 0) return null
   const dur = ms.reduce((a, m) => a + m.durationSec, 0)
   const wavg = (pick: (m: Metrics) => number | null) => {

@@ -264,7 +264,10 @@ export function PracticeScreen({
         const faceSamples = face ? face.samples.slice() : []
         const audioSamples = audio ? audio.samples.slice() : []
         const baseline = { ...baselineRef.current }
-        const result = scoreMetrics(computeMetrics(audioSamples, faceSamples, baseline, durationMs))
+        const result = scoreMetrics(
+          computeMetrics(audioSamples, faceSamples, baseline, durationMs),
+          ts.minRecordSec,
+        )
         const record: AnalysisRecord = { audio: audioSamples, face: faceSamples, baseline, result }
         const id = newId()
         if (result.overall !== null) {
@@ -280,7 +283,7 @@ export function PracticeScreen({
         return null
       }
     },
-    [analysisOn, onAnalysis, topic.id],
+    [analysisOn, onAnalysis, topic.id, ts.minRecordSec],
   )
 
   /** 저장한 녹음 파일을 분석 기록에 연결 (점수가 나온 기록만) */
@@ -402,7 +405,7 @@ export function PracticeScreen({
           showToast(`이미 저장되었습니다: ${review.savedName}`, 'warn')
           return
         }
-        // 자동 저장과 같은 최소 녹음 시간 기준 적용
+        // 자동 저장과 같은 최소 녹화/녹음 시간 기준 적용
         if (review.durationMs <= ts.minRecordSec * 1000) {
           showToast(`${ts.minRecordSec}초 이하로 녹음되어 저장할 수 없습니다.`, 'warn')
           return

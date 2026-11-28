@@ -61,11 +61,14 @@ export function SessionReport({ topic, summary, entries: given }: Props) {
     const loaded = records
       .map((r, i) => (r ? { r, i } : null))
       .filter((x): x is { r: AnalysisRecord; i: number } => x !== null)
-    const metrics = combineMetrics(loaded.map(({ r }) => r.result.metrics))
+    const metrics = combineMetrics(
+      loaded.map(({ r }) => r.result.metrics),
+      topic.settings.minRecordSec,
+    )
     // 얼굴이 충분히 잡힌 답변만 그림에 씀
     const faced = loaded.filter(({ r }) => r.result.metrics.faceDetectedRatio >= 0.5 && r.face.length > 0)
     return { loaded: loaded.length, metrics, faced }
-  }, [records])
+  }, [records, topic.settings.minRecordSec])
 
   return (
     <section className="session-report">

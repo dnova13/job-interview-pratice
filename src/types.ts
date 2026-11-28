@@ -9,7 +9,7 @@ export interface TopicSettings {
   order: QuestionOrder
   /** 질의 시작 전 대기 카운트(초) */
   countdownSec: number
-  /** 이 시간(초) 이하로 녹음되면 파일로 저장하지 않음 */
+  /** 이 시간(초) 이하로 녹화·녹음되면 파일로 저장하지 않고 점수도 내지 않음 */
   minRecordSec: number
   /** 파일 저장 여부 */
   saveEnabled: boolean
@@ -125,7 +125,7 @@ export interface ElectronApi {
 export const DEFAULT_TOPIC_SETTINGS: TopicSettings = {
   order: 'random',
   countdownSec: 5,
-  minRecordSec: 1,
+  minRecordSec: 10,
   saveEnabled: true,
   saveFormat: 'video',
 }
