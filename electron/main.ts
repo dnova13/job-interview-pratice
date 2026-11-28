@@ -9,7 +9,7 @@ import type {
   StoreData,
   Topic,
 } from '../src/types'
-import { DEFAULT_SEEK_STEP_SEC, DEFAULT_SHORTCUTS } from '../src/types'
+import { DEFAULT_ANALYSIS_SETTINGS, DEFAULT_SEEK_STEP_SEC, DEFAULT_SHORTCUTS } from '../src/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -26,6 +26,7 @@ function defaultStore(): StoreData {
       saveRoot: DEFAULT_SAVE_ROOT,
       shortcuts: { ...DEFAULT_SHORTCUTS },
       seekStepSec: DEFAULT_SEEK_STEP_SEC,
+      analysis: { ...DEFAULT_ANALYSIS_SETTINGS },
     },
   }
 }
@@ -44,6 +45,7 @@ async function readStore(): Promise<StoreData> {
           typeof parsed.settings?.seekStepSec === 'number' && parsed.settings.seekStepSec > 0
             ? parsed.settings.seekStepSec
             : base.settings.seekStepSec,
+        analysis: { ...base.settings.analysis, ...parsed.settings?.analysis },
       },
     }
   } catch {
@@ -162,6 +164,52 @@ async function saveRecording(req: SaveRecordingRequest): Promise<SaveRecordingRe
   }
 }
 
+// ---------- 답변 분석 상세 데이터 ----------
+
+const ANALYSIS_DIR = path.join(app.getPath('userData'), 'analysis')
+/** id는 영문·숫자·하이픈만 허용 (경로 조작 방지) */
+const safeId = (id: string) => /^[A-Za-z0-9-]+$/.test(id)
+const detailPath = (topicId: string, id: string) => path.join(ANALYSIS_DIR, topicId, `${id}.json`)
+
+async function saveAnalysisDetail(topicId: string, id: string, record: unknown) {
+  if (!safeId(topicId) || !safeId(id)) throw new Error('잘못된 기록 id')
+  await fs.mkdir(path.join(ANALYSIS_DIR, topicId), { recursive: true })
+  await fs.writeFile(detailPath(topicId, id), JSON.stringify(record), 'utf-8')
+}
+
+async function loadAnalysisDetail(topicId: string, id: string) {
+  if (!safeId(topicId) || !safeId(id)) return null
+  try {
+    return JSON.parse(await fs.readFile(detailPath(topicId, id), 'utf-8'))
+  } catch {
+    return null
+  }
+}
+
+async function deleteAnalysisDetails(topicId: string, ids: string[] | null) {
+  if (!safeId(topicId)) return
+  if (ids === null) {
+    await fs.rm(path.join(ANALYSIS_DIR, topicId), { recursive: true, force: true })
+    return
+  }
+  for (const id of ids) if (safeId(id)) await fs.rm(detailPath(topicId, id), { force: true })
+}
+
+/** 저장 폴더 안의 녹음 파일만 읽음 */
+async function readRecording(filePath: string): Promise<Uint8Array | null> {
+  const { settings } = await readStore()
+  const root = path.resolve(settings.saveRoot || DEFAULT_SAVE_ROOT)
+  const target = path.resolve(filePath)
+  const rel = path.relative(root, target)
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return null
+  if (!/\.(mp4|m4a|webm)$/i.test(target)) return null
+  try {
+    return new Uint8Array(await fs.readFile(target))
+  } catch {
+    return null
+  }
+}
+
 // ---------- IPC ----------
 
 function registerIpc() {
@@ -193,6 +241,12 @@ function registerIpc() {
   })
 
   ipcMain.handle('recording:save', (_e, req: SaveRecordingRequest) => saveRecording(req))
+  ipcMain.handle('recording:read', (_e, filePath: string) => readRecording(filePath))
+  ipcMain.handle('analysis:save', (_e, topicId: string, id: string, record: unknown) =>
+    saveAnalysisDetail(topicId, id, record),
+  )
+  ipcMain.handle('analysis:load', (_e, topicId: string, id: string) => loadAnalysisDetail(topicId, id))
+  ipcMain.handle('analysis:delete', (_e, topicId: string, ids: string[] | null) => deleteAnalysisDetails(topicId, ids))
 }
 
 // ---------- 창 ----------

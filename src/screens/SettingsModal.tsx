@@ -84,6 +84,43 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
           <span className="field-hint">녹음 완료 후 다시 들을 때 영상/음성 뒤로·앞으로 이동 단축키로 움직이는 시간입니다.</span>
         </label>
 
+        <div className="field">
+          <span className="field-label">답변 분석 (참고용)</span>
+          <label className="field checkbox">
+            <input
+              type="checkbox"
+              checked={draft.analysis.enabled}
+              onChange={(e) => setDraft((d) => ({ ...d, analysis: { ...d.analysis, enabled: e.target.checked } }))}
+            />
+            <span>목소리 톤·크기, 시선, 고개 움직임 분석</span>
+          </label>
+          <label className="field checkbox">
+            <input
+              type="checkbox"
+              checked={draft.analysis.liveOverlay}
+              disabled={!draft.analysis.enabled}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, analysis: { ...d.analysis, liveOverlay: e.target.checked } }))
+              }
+            />
+            <span>녹음 중 카메라 위에 시선 점·정면 표시</span>
+          </label>
+          <label className="field checkbox">
+            <input
+              type="checkbox"
+              checked={draft.analysis.debugOverlay}
+              disabled={!draft.analysis.enabled || !draft.analysis.liveOverlay}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, analysis: { ...d.analysis, debugOverlay: e.target.checked } }))
+              }
+            />
+            <span>카메라 위에 고개 각도·측정 횟수 표시 (기준 확인용)</span>
+          </label>
+          <span className="field-hint">
+            모두 이 컴퓨터 안에서 처리하며 외부로 보내지 않습니다. 점수 기준은 경험치라 습관을 찾는 참고용으로 쓰세요.
+          </span>
+        </div>
+
         <footer className="modal-footer">
           <button className="btn ghost" onClick={onClose}>
             취소

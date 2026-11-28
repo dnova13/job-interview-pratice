@@ -9,6 +9,10 @@ const api: ElectronApi = {
   openPath: (target) => ipcRenderer.invoke('shell:openPath', target),
   ensureMediaAccess: () => ipcRenderer.invoke('media:ensureAccess'),
   saveRecording: (req) => ipcRenderer.invoke('recording:save', req),
+  saveAnalysisDetail: (topicId, id, record) => ipcRenderer.invoke('analysis:save', topicId, id, record),
+  loadAnalysisDetail: (topicId, id) => ipcRenderer.invoke('analysis:load', topicId, id),
+  deleteAnalysisDetails: (topicId, ids) => ipcRenderer.invoke('analysis:delete', topicId, ids),
+  readRecording: (filePath) => ipcRenderer.invoke('recording:read', filePath),
 }
 
 contextBridge.exposeInMainWorld('api', api)

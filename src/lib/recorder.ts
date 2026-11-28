@@ -79,6 +79,11 @@ export class Recorder {
     this.pausedTotal += performance.now() - this.pausedAt
   }
 
+  /** 지금 실제로 녹음 중인지 (일시정지 제외) */
+  get isRecording(): boolean {
+    return this.recorder.state === 'recording'
+  }
+
   get state(): RecordingState {
     return this.recorder.state
   }

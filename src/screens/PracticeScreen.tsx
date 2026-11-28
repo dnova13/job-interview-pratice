@@ -2,6 +2,23 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppSettings, QuestionMeta, QuestionOrder, Topic } from '../types'
 import { EMPTY_QUESTION_META } from '../types'
 import { MemoField, StarRating } from './TopicDetail'
+import { FaceTracker } from '../lib/analysis/face'
+import { AudioAnalyzer } from '../lib/analysis/audio'
+import { computeMetrics, countSwings, METRIC_PARAMS } from '../lib/analysis/metrics'
+import { compactRecord, scoreMetrics, summarizeSession, toSummary } from '../lib/analysis/scoring'
+import { newId } from '../lib/utils'
+import { SessionReport } from '../components/SessionReport'
+import {
+  DEFAULT_BASELINE,
+  type AnalysisRecord,
+  type AnalysisResult,
+  type AnalysisSummary,
+  type Baseline,
+  type FaceSample,
+  type SessionSummary,
+} from '../lib/analysis/types'
+import { GazeOverlay } from '../components/GazeOverlay'
+import { AnalysisReport } from '../components/AnalysisReport'
 import { Recorder, type RecordingResult } from '../lib/recorder'
 import { formatShortcut, matchShortcut } from '../lib/shortcuts'
 import { formatTime, shuffle } from '../lib/utils'
@@ -28,6 +45,12 @@ interface Props {
   settings: AppSettings
   /** 질의 목록 패널에서 중요도·안 외워짐 표시를 바꿀 때 */
   onUpdateMeta: (question: string, patch: Partial<QuestionMeta>) => void
+  /** 답변 분석 점수를 질의별 기록에 남길 때 */
+  onAnalysis: (question: string, summary: AnalysisSummary) => void
+  /** 분석 기록과 저장한 녹음 파일 연결 */
+  onRecordingLinked: (question: string, recordId: string, filePath: string, kind: 'audio' | 'video') => void
+  /** 세션 종합 기록 남기기 (같은 id면 덮어씀) */
+  onSession: (summary: SessionSummary) => void
   onExit: () => void
 }
 
@@ -42,6 +65,12 @@ interface Review {
   question: string
   /** 저장된 파일 이름 (아직 저장 안 했으면 null) */
   savedName: string | null
+  /** 답변 분석 결과 (분석을 끄거나 실패하면 null) */
+  analysis: AnalysisRecord | null
+  /** 분석 기록 id (녹음 파일을 저장하면 이 기록에 연결) */
+  analysisId: string | null
+  /** 같은 질의의 지난번 종합 점수 */
+  previousOverall: number | null
 }
 
 interface Toast {
@@ -55,7 +84,18 @@ function buildOrder(count: number, order: QuestionOrder): number[] {
   return order === 'random' ? shuffle(indices) : indices
 }
 
-export function PracticeScreen({ topic, questions, order: orderMode, settings, onUpdateMeta, onExit }: Props) {
+export function PracticeScreen({
+  topic,
+  questions,
+  order: orderMode,
+  settings,
+  onUpdateMeta,
+  onAnalysis,
+  onRecordingLinked,
+  onSession,
+  onExit,
+}: Props) {
+  const analysisOn = settings.analysis.enabled
   const ts = topic.settings
   const [order, setOrder] = useState<number[]>(() => buildOrder(questions.length, orderMode))
   const [listOpen, setListOpen] = useState(false)
@@ -80,6 +120,28 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
   const reviewUrlRef = useRef<string | null>(null)
   /** 다시 듣기 플레이어 (영상이면 video, 음성이면 audio) */
   const playbackRef = useRef<HTMLMediaElement | null>(null)
+  // ---------- 답변 분석 ----------
+  const faceRef = useRef<FaceTracker | null>(null)
+  const audioRef = useRef<AudioAnalyzer | null>(null)
+  const baselineRef = useRef<Baseline>({ ...DEFAULT_BASELINE })
+  // ---------- 세션 종합 기록 ----------
+  const sessionIdRef = useRef(newId())
+  const sessionStartRef = useRef(Date.now())
+  /** 이번 세션에서 점수가 나온 답변 (질의, 요약, 결과) */
+  const sessionEntriesRef = useRef<{ question: string; summary: AnalysisSummary; result: AnalysisResult }[]>([])
+  /** 마지막 질의까지 마쳤는지 */
+  const sessionCompletedRef = useRef(false)
+  const [sessionReport, setSessionReport] = useState<SessionSummary | null>(null)
+  /** 실시간 표시: 정면 여부와 끄덕임 횟수 */
+  const [liveGaze, setLiveGaze] = useState<'front' | 'away' | 'none' | null>(null)
+  const [liveNods, setLiveNods] = useState(0)
+  /** 기준 확인용: 현재 고개 각도와 초당 측정 횟수 */
+  const [liveAngles, setLiveAngles] = useState<{ pitch: number; yaw: number; roll: number; fps: number } | null>(null)
+  const debugOn = settings.analysis.debugOverlay
+  const debugRef = useRef(debugOn)
+  debugRef.current = debugOn
+  /** 녹화본 재생 위에 시선 점을 그리기 위한 재생 video 요소 */
+  const [playbackVideo, setPlaybackVideo] = useState<HTMLVideoElement | null>(null)
 
   const question = questions[order[pos]] ?? ''
   const questionMeta: QuestionMeta = { ...EMPTY_QUESTION_META, ...topic.questionMeta?.[question] }
@@ -95,6 +157,8 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
 
   const clearReview = useCallback(() => {
     setMemoEditing(false)
+    // 다른 질의로 넘어가면 다시 듣던 녹음은 멈춤
+    playbackRef.current?.pause()
     if (reviewUrlRef.current) URL.revokeObjectURL(reviewUrlRef.current)
     reviewUrlRef.current = null
     setReview(null)
@@ -111,6 +175,20 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
     if (!stream) return
     try {
       const rec = new Recorder(stream, ts.saveFormat)
+      // 카운트다운 동안 잰 기준값(배경 소음, 렌즈를 보는 자세)을 확정하고 기록을 새로 시작
+      const noise = audioRef.current?.finishCalibration() ?? null
+      const gaze = faceRef.current?.finishCalibration() ?? null
+      const prev = baselineRef.current
+      baselineRef.current = {
+        noiseDb: noise ?? prev.noiseDb,
+        gazeX: gaze?.gazeX ?? prev.gazeX,
+        gazeY: gaze?.gazeY ?? prev.gazeY,
+        measured: prev.measured || gaze !== null,
+      }
+      if (faceRef.current) faceRef.current.baseline = baselineRef.current
+      faceRef.current?.reset()
+      audioRef.current?.reset()
+      setLiveNods(0)
       rec.start()
       recorderRef.current = rec
       setElapsed(0)
@@ -135,6 +213,8 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
       }
       setCountdown(secs)
       setPhase('countdown')
+      faceRef.current?.startCalibration()
+      audioRef.current?.startCalibration()
       let left = secs
       const tick = () => {
         if (countdownTokenRef.current !== token) return
@@ -151,9 +231,9 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
     [clearReview, startRecording, ts.countdownSec],
   )
 
-  /** 녹음 데이터를 파일로 저장. 성공하면 파일 이름, 실패하면 null */
+  /** 녹음 데이터를 파일로 저장. 성공하면 파일 이름·경로, 실패하면 null */
   const saveBlob = useCallback(
-    async (blob: Blob, ext: string, questionText: string): Promise<string | null> => {
+    async (blob: Blob, ext: string, questionText: string): Promise<{ fileName: string; filePath: string } | null> => {
       try {
         const saved = await window.api.saveRecording({
           saveRoot: settings.saveRoot,
@@ -165,7 +245,7 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
         })
         sessionDirRef.current = saved.sessionDir
         setSavedCount((c) => c + 1)
-        return saved.fileName
+        return { fileName: saved.fileName, filePath: saved.filePath }
       } catch (err) {
         showToast(`저장 실패: ${(err as Error).message}`, 'error')
         return null
@@ -174,25 +254,97 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
     [settings.saveRoot, showToast, topic.title],
   )
 
+  /** 녹음이 끝난 답변 분석. 점수가 나오면 질의별 기록에 남김 */
+  const analyze = useCallback(
+    (questionText: string, durationMs: number): { record: AnalysisRecord; id: string } | null => {
+      const face = faceRef.current
+      const audio = audioRef.current
+      if (!analysisOn || (!face && !audio)) return null
+      try {
+        const faceSamples = face ? face.samples.slice() : []
+        const audioSamples = audio ? audio.samples.slice() : []
+        const baseline = { ...baselineRef.current }
+        const result = scoreMetrics(computeMetrics(audioSamples, faceSamples, baseline, durationMs))
+        const record: AnalysisRecord = { audio: audioSamples, face: faceSamples, baseline, result }
+        const id = newId()
+        if (result.overall !== null) {
+          // 상세 데이터(타임라인·그림용)는 별도 파일로 저장하고, 점수 요약은 질의별 기록에 남김
+          void window.api.saveAnalysisDetail(topic.id, id, compactRecord(record)).catch(() => {})
+          const summary = { ...toSummary(result, id), sessionId: sessionIdRef.current, hasDetail: true }
+          sessionEntriesRef.current.push({ question: questionText, summary, result })
+          onAnalysis(questionText, summary)
+        }
+        return { record, id }
+      } catch (err) {
+        console.warn('답변 분석 실패', err)
+        return null
+      }
+    },
+    [analysisOn, onAnalysis, topic.id],
+  )
+
+  /** 저장한 녹음 파일을 분석 기록에 연결 (점수가 나온 기록만) */
+  const linkRecording = useCallback(
+    (questionText: string, analysisId: string | null, filePath: string) => {
+      if (!analysisId) return
+      const entry = sessionEntriesRef.current.find((e) => e.summary.id === analysisId)
+      if (!entry) return
+      entry.summary = { ...entry.summary, recordingPath: filePath, recordingKind: ts.saveFormat }
+      onRecordingLinked(questionText, analysisId, filePath, ts.saveFormat)
+    },
+    [onRecordingLinked, ts.saveFormat],
+  )
+
+  /** 세션 종합 기록 남기기. 점수가 나온 답변이 하나도 없으면 남기지 않음 */
+  const recordSession = useCallback(() => {
+    const entries = sessionEntriesRef.current
+    if (entries.length === 0) return null
+    const summary = summarizeSession(
+      entries.map((e) => e.result),
+      {
+        id: sessionIdRef.current,
+        startedAt: sessionStartRef.current,
+        completed: sessionCompletedRef.current,
+        total: questions.length,
+        order: orderMode,
+      },
+    )
+    onSession(summary)
+    return summary
+  }, [onSession, orderMode, questions.length])
+
   /** 녹음을 끝내고, 자동 저장이면 조건에 맞을 때 파일로 저장 */
   const finishRecording = useCallback(
-    async (questionText: string): Promise<{ result: RecordingResult; savedName: string | null } | null> => {
+    async (
+      questionText: string,
+    ): Promise<{
+      result: RecordingResult
+      savedName: string | null
+      analysis: AnalysisRecord | null
+      analysisId: string | null
+    } | null> => {
       const rec = recorderRef.current
       if (!rec) return null
       recorderRef.current = null
       const result = await rec.stop()
+      const analyzed = analyze(questionText, result.durationMs)
+      const analysis = analyzed?.record ?? null
+      const analysisId = analyzed?.id ?? null
 
       // 수동 저장 모드: 저장하지 않고 다시 듣기 화면의 저장 버튼으로 저장
-      if (!ts.saveEnabled) return { result, savedName: null }
+      if (!ts.saveEnabled) return { result, savedName: null, analysis, analysisId }
       if (result.durationMs <= ts.minRecordSec * 1000) {
         showToast(`${ts.minRecordSec}초 이하로 녹음되어 저장하지 않았습니다.`, 'warn')
-        return { result, savedName: null }
+        return { result, savedName: null, analysis, analysisId }
       }
-      const savedName = await saveBlob(result.blob, result.ext, questionText)
-      if (savedName) showToast(`저장됨: ${savedName}`)
-      return { result, savedName }
+      const saved = await saveBlob(result.blob, result.ext, questionText)
+      if (saved) {
+        showToast(`저장됨: ${saved.fileName}`)
+        linkRecording(questionText, analysisId, saved.filePath)
+      }
+      return { result, savedName: saved?.fileName ?? null, analysis, analysisId }
     },
-    [saveBlob, showToast, ts.minRecordSec, ts.saveEnabled],
+    [analyze, linkRecording, saveBlob, showToast, ts.minRecordSec, ts.saveEnabled],
   )
 
   /** 진행 중인 작업이 겹치지 않도록 한 번에 하나만 실행 */
@@ -215,9 +367,12 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
     () =>
       runExclusive(async () => {
         if (phase !== 'recording' && phase !== 'paused') return
+        // 지난번 점수는 이번 기록이 더해지기 전 값
+        const history = topic.analysisHistory?.[question] ?? []
+        const previousOverall = [...history].reverse().find((h) => h.overall !== null)?.overall ?? null
         const finished = await finishRecording(question)
         if (!finished) return
-        const { result, savedName } = finished
+        const { result, savedName, analysis, analysisId } = finished
         const url = URL.createObjectURL(result.blob)
         reviewUrlRef.current = url
         setReview({
@@ -228,11 +383,14 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
           ext: result.ext,
           question,
           savedName,
+          analysis,
+          analysisId,
+          previousOverall,
         })
         setElapsed(result.durationMs)
         setPhase('review')
       }),
-    [finishRecording, phase, question, runExclusive, ts.saveFormat],
+    [finishRecording, phase, question, runExclusive, topic.analysisHistory, ts.saveFormat],
   )
 
   /** 수동 저장 모드: 다시 듣기 중인 녹음을 저장 (이미 저장했으면 알림만) */
@@ -249,12 +407,14 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
           showToast(`${ts.minRecordSec}초 이하로 녹음되어 저장할 수 없습니다.`, 'warn')
           return
         }
-        const savedName = await saveBlob(review.blob, review.ext, review.question)
-        if (!savedName) return
+        const saved = await saveBlob(review.blob, review.ext, review.question)
+        if (!saved) return
+        const savedName = saved.fileName
         setReview((r) => (r && r.url === review.url ? { ...r, savedName } : r))
+        linkRecording(review.question, review.analysisId, saved.filePath)
         showToast(`저장되었습니다: ${savedName}`)
       }),
-    [phase, review, runExclusive, saveBlob, showToast, ts.minRecordSec],
+    [linkRecording, phase, review, runExclusive, saveBlob, showToast, ts.minRecordSec],
   )
 
   /** 녹음 버튼: 녹음 중이면 완료, 다시 듣기 상태면 같은 질의 다시 녹음 */
@@ -292,12 +452,15 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
         }
         if (target >= total) {
           clearReview()
+          // 마지막 질의까지 마침: 종합 기록을 남기고 결과 보고서 표시
+          sessionCompletedRef.current = true
+          setSessionReport(recordSession())
           setPhase('finished')
           return
         }
         beginCountdown(target)
       }),
-    [beginCountdown, clearReview, finishRecording, phase, question, runExclusive, total],
+    [beginCountdown, clearReview, finishRecording, phase, question, recordSession, runExclusive, total],
   )
 
   /** 이전/다음 */
@@ -322,9 +485,11 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
       runExclusive(async () => {
         cancelCountdown()
         if (phase === 'recording' || phase === 'paused') await finishRecording(question)
+        // 도중에 나가도 종합 기록은 남김 (마지막까지 마쳤으면 완료로)
+        recordSession()
         onExit()
       }),
-    [finishRecording, onExit, phase, question, runExclusive],
+    [finishRecording, onExit, phase, question, recordSession, runExclusive],
   )
 
   /** 다시 듣기 플레이어를 지정한 초만큼 앞뒤로 이동 */
@@ -345,11 +510,18 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
         if (phase === 'preparing' || phase === 'error') return
         cancelCountdown()
         if (phase === 'recording' || phase === 'paused') await finishRecording(question)
+        // 지금까지의 세션은 종합 기록으로 남기고 새 세션 시작
+        recordSession()
+        sessionIdRef.current = newId()
+        sessionStartRef.current = Date.now()
+        sessionEntriesRef.current = []
+        sessionCompletedRef.current = false
+        setSessionReport(null)
         setListOpen(false)
         setOrder(buildOrder(questions.length, orderMode))
         beginCountdown(0)
       }),
-    [beginCountdown, finishRecording, orderMode, phase, question, questions.length, runExclusive],
+    [beginCountdown, finishRecording, orderMode, phase, question, questions.length, recordSession, runExclusive],
   )
 
   // ---------- 카메라 준비 ----------
@@ -369,13 +541,56 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
       streamRef.current?.getTracks().forEach((t) => t.stop())
       streamRef.current = stream
       if (videoRef.current) videoRef.current.srcObject = stream
+      if (analysisOn) await startAnalyzers(stream)
       return true
     } catch (err) {
       setErrorText((err as Error).message || '카메라·마이크를 사용할 수 없습니다.')
       setPhase('error')
       return false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /** 분석기 시작. 실패해도 녹음은 그대로 진행 */
+  const startAnalyzers = async (stream: MediaStream) => {
+    stopAnalyzers()
+    // 실제로 녹음 중일 때만 시간을 돌려줌 (일시정지·카운트다운·다시 듣기 중에는 기록하지 않음)
+    const clock = () => {
+      const rec = recorderRef.current
+      return rec && rec.isRecording ? rec.elapsedMs() : null
+    }
+    try {
+      const audio = new AudioAnalyzer(stream)
+      audio.clock = clock
+      audio.start()
+      audioRef.current = audio
+    } catch (err) {
+      console.warn('음성 분석을 시작할 수 없습니다.', err)
+    }
+    if (!videoRef.current) return
+    const face = new FaceTracker(videoRef.current, baselineRef.current)
+    face.clock = clock
+    face.onFail = () => showToast('얼굴 분석이 멈춰 목소리만 분석합니다.', 'warn')
+    try {
+      // 모델을 처음 읽을 때 몇 초 걸릴 수 있어 최대 10초만 기다림
+      await Promise.race([
+        face.start(),
+        new Promise((_, reject) => window.setTimeout(() => reject(new Error('시간 초과')), 10000)),
+      ])
+      faceRef.current = face
+    } catch (err) {
+      face.stop()
+      console.warn('얼굴 분석을 시작할 수 없습니다.', err)
+      showToast('얼굴 분석을 시작하지 못했습니다. 목소리만 분석합니다.', 'warn')
+    }
+  }
+
+  const stopAnalyzers = () => {
+    faceRef.current?.stop()
+    faceRef.current = null
+    audioRef.current?.stop()
+    audioRef.current = null
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -387,6 +602,7 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
       countdownTokenRef.current += 1
       recorderRef.current?.stop()
       recorderRef.current = null
+      stopAnalyzers()
       streamRef.current?.getTracks().forEach((t) => t.stop())
       streamRef.current = null
       if (reviewUrlRef.current) URL.revokeObjectURL(reviewUrlRef.current)
@@ -401,6 +617,39 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
       videoRef.current.srcObject = streamRef.current
     }
   })
+
+  // 실시간 시선 표시: 측정값이 올 때마다 그리기, 정면 여부는 바뀔 때만 화면 갱신
+  const subscribeLive = useCallback((draw: (s: FaceSample | null) => void) => {
+    const face = faceRef.current
+    if (!face) return () => {}
+    face.onSample = (s) => {
+      draw(s)
+      setLiveGaze(!s.detected ? 'none' : s.frontal ? 'front' : 'away')
+      if (debugRef.current)
+        setLiveAngles(s.detected ? { pitch: s.pitch, yaw: s.yaw, roll: s.roll, fps: face.fps } : null)
+    }
+    return () => {
+      face.onSample = null
+    }
+  }, [])
+
+  // 녹음 중 끄덕임 횟수 (1초마다 다시 셈)
+  useEffect(() => {
+    if (phase !== 'recording' || !settings.analysis.liveOverlay) return
+    const id = window.setInterval(() => {
+      const samples = faceRef.current?.samples.filter((f) => f.detected) ?? []
+      const p = METRIC_PARAMS
+      setLiveNods(
+        countSwings(
+          samples.map((f) => ({ t: f.t, v: f.pitch })),
+          p.headSwingDeg,
+          p.headSwingMinSec,
+          p.headSwingMaxSec,
+        ),
+      )
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [phase, settings.analysis.liveOverlay])
 
   // 녹음 시간 표시
   useEffect(() => {
@@ -428,8 +677,11 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
       return !!el?.closest?.('textarea, input:not([type="checkbox"]):not([type="radio"]), [contenteditable="true"]')
     }
 
+    // 기록 상세 창 등 모달이 열려 있으면 연습 단축키를 쓰지 않음
+    const modalOpen = () => !!document.querySelector('.modal-backdrop')
+
     const onKey = (e: KeyboardEvent) => {
-      if (isTyping(e)) return
+      if (isTyping(e) || modalOpen()) return
       // 포커스된 버튼이 Space·Enter로 함께 눌리거나, 플레이어 진행 바가
       // 방향키를 자체 처리(아주 작은 단위 이동)하지 않도록 단축키는 기본 동작을 막음
       if (isShortcut(e)) e.preventDefault()
@@ -458,7 +710,7 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
     }
     // 버튼의 Space 클릭은 keyup에서 일어나므로 keyup도 막음
     const onKeyUp = (e: KeyboardEvent) => {
-      if (isTyping(e)) return
+      if (isTyping(e) || modalOpen()) return
       if (isShortcut(e)) e.preventDefault()
     }
     window.addEventListener('keydown', onKey, true)
@@ -529,11 +781,56 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
           {showRecordedVideo && review && (
             <video
               key={review.url}
-              ref={playbackRef as React.Ref<HTMLVideoElement>}
+              ref={(el) => {
+                playbackRef.current = el
+                setPlaybackVideo(el)
+              }}
               className="playback"
               src={review.url}
               controls
-              autoPlay
+            />
+          )}
+          {/* 시선 점: 실시간 카메라 위 / 녹화본 재생 위 */}
+          {analysisOn && settings.analysis.liveOverlay && !showRecordedVideo && faceRef.current && (
+            <GazeOverlay video={videoRef.current} fit="cover" mirrored subscribe={subscribeLive} />
+          )}
+          {analysisOn && showRecordedVideo && review?.analysis && review.analysis.face.length > 0 && (
+            <GazeOverlay video={playbackVideo} fit="contain" mirrored={false} samples={review.analysis.face} />
+          )}
+          {analysisOn && settings.analysis.liveOverlay && isRecording && liveGaze && (
+            <div className="live-analysis">
+              <span className={`live-gaze ${liveGaze}`}>
+                {liveGaze === 'front' ? '정면' : liveGaze === 'away' ? '시선 이탈' : '얼굴 없음'}
+              </span>
+              <span>끄덕임 {liveNods}</span>
+              <span className="muted">참고용</span>
+            </div>
+          )}
+          {analysisOn && settings.analysis.liveOverlay && debugOn && !showRecordedVideo && (
+            <div className="live-debug">
+              {liveAngles ? (
+                <>
+                  <span>상하 {liveAngles.pitch.toFixed(1)}°</span>
+                  <span>좌우 {liveAngles.yaw.toFixed(1)}°</span>
+                  <span>기울기 {liveAngles.roll.toFixed(1)}°</span>
+                  <span>
+                    {Math.round(liveAngles.fps)}회/초 · {faceRef.current?.delegate ?? '-'}
+                  </span>
+                  <span className="muted">끄덕임 기준 {METRIC_PARAMS.headSwingDeg}°</span>
+                </>
+              ) : (
+                <span>얼굴 없음</span>
+              )}
+            </div>
+          )}
+          {phase === 'review' && review?.kind === 'audio' && (
+            // 영상 컨트롤처럼 카메라 아래쪽에 표시. 자동 재생하지 않고 원할 때 재생
+            <audio
+              key={`audio-${review.url}`}
+              ref={playbackRef as React.Ref<HTMLAudioElement>}
+              className="audio-player"
+              src={review.url}
+              controls
             />
           )}
           <div className="camera-top">
@@ -586,16 +883,6 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
               )}
             </div>
           )}
-          {phase === 'review' && review?.kind === 'audio' && (
-            <audio
-              key={review.url}
-              ref={playbackRef as React.Ref<HTMLAudioElement>}
-              className="audio-player"
-              src={review.url}
-              controls
-              autoPlay
-            />
-          )}
           {/* 수동 저장 모드에서만 저장 버튼 표시 (자동 저장일 때는 없음) */}
           {phase === 'review' && review && !ts.saveEnabled && (
             <button
@@ -606,6 +893,21 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
               {review.savedName ? <CheckIcon size={18} /> : <SaveIcon size={18} />}
               {review.savedName ? `저장됨 · ${review.savedName}` : `이 ${review.kind === 'video' ? '영상' : '음성'} 저장`}
             </button>
+          )}
+          {phase === 'review' && review?.analysis && (
+            <AnalysisReport
+              key={`report-${review.url}`}
+              record={review.analysis}
+              previousOverall={review.previousOverall}
+              durationMs={review.durationMs}
+              onSeek={(sec) => {
+                const el = playbackRef.current
+                if (!el) return
+                el.currentTime = sec
+                void el.play()
+              }}
+              getTime={() => (playbackRef.current ? playbackRef.current.currentTime : null)}
+            />
           )}
           {phase === 'review' && (
             <p className="hint">
@@ -669,6 +971,7 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
             {countdown}
           </span>
           <p className="countdown-question">{question}</p>
+          {analysisOn && faceRef.current && <p className="countdown-hint">카메라 렌즈를 보세요 · 시선 기준을 맞추는 중</p>}
         </div>
       )}
 
@@ -698,9 +1001,16 @@ export function PracticeScreen({ topic, questions, order: orderMode, settings, o
       )}
 
       {phase === 'finished' && (
-        <div className="countdown-overlay">
+        <div className="countdown-overlay finished">
           <p className="countdown-question">모든 질의를 마쳤습니다 🎉</p>
           {ts.saveEnabled && <p className="muted">이번 세션에 저장된 파일 {savedCount}개</p>}
+          {analysisOn && sessionReport && (
+            <SessionReport
+              topic={topic}
+              summary={sessionReport}
+              entries={sessionEntriesRef.current.map((e) => ({ question: e.question, summary: e.summary }))}
+            />
+          )}
           <div className="overlay-actions">
             {sessionDirRef.current && (
               <button className="btn ghost" onClick={() => window.api.openPath(sessionDirRef.current!)}>

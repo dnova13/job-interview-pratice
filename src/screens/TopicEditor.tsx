@@ -34,6 +34,10 @@ export function TopicEditor({ topic, onSave, onCancel }: Props) {
       questionMeta: Object.fromEntries(
         questions.filter((q) => topic?.questionMeta?.[q]).map((q) => [q, topic!.questionMeta![q]]),
       ),
+      sessionHistory: topic?.sessionHistory,
+      analysisHistory: Object.fromEntries(
+        questions.filter((q) => topic?.analysisHistory?.[q]).map((q) => [q, topic!.analysisHistory![q]]),
+      ),
       settings: {
         ...settings,
         countdownSec: Math.max(0, Math.round(settings.countdownSec)),
@@ -148,16 +152,16 @@ export function TopicEditor({ topic, onSave, onCancel }: Props) {
             <span className="field-label">녹음 형식</span>
             <div className="segmented">
               <button
-                className={settings.saveFormat === 'audio' ? 'on' : ''}
-                onClick={() => set('saveFormat', 'audio')}
-              >
-                음성 (.m4a)
-              </button>
-              <button
                 className={settings.saveFormat === 'video' ? 'on' : ''}
                 onClick={() => set('saveFormat', 'video')}
               >
                 영상 (.mp4)
+              </button>
+              <button
+                className={settings.saveFormat === 'audio' ? 'on' : ''}
+                onClick={() => set('saveFormat', 'audio')}
+              >
+                음성 (.m4a)
               </button>
             </div>
           </div>

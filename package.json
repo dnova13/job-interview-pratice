@@ -7,27 +7,33 @@
   "main": "dist-electron/main.js",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/prepare-mediapipe.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/prepare-mediapipe.mjs",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite build && electron .",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:mac:local": "npm run build && electron-builder --mac --dir",
-    "dist:win": "npm run build && electron-builder --win"
+    "dist:win": "npm run build && electron-builder --win",
+    "test": "vitest run"
   },
   "devDependencies": {
+    "@mediapipe/tasks-vision": "^1.2.3",
     "@types/node": "^26.6.10",
     "@types/react": "^19.3.2",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "electron": "^45.5.0",
     "electron-builder": "^26.18.0",
+    "pitchy": "^4.1.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
-    "vite-plugin-electron": "^1.2.0"
+    "vite-plugin-electron": "^1.2.0",
+    "vitest": "^5.1.2"
   },
   "author": "InterviewPractice"
 }

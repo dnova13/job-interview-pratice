@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { QuestionMeta, QuestionOrder, Topic } from '../types'
 import { EMPTY_QUESTION_META } from '../types'
+import { QuestionHistoryPanel, SessionHistoryPanel } from '../components/HistoryPanels'
+
+/** 질의의 분석 점수 기록 (점수가 있는 것만) */
+const scoresOf = (topic: Topic, q: string) =>
+  (topic.analysisHistory?.[q] ?? []).map((h) => h.overall).filter((v): v is number => v !== null)
 import {
   BackIcon,
   CloseIcon,
@@ -24,6 +29,8 @@ export interface DetailUiState {
   selected: string[]
   /** 선택 연습의 출제 순서 (null이면 주제 설정을 따름) */
   order: QuestionOrder | null
+  /** 목록 정렬: 기본 순서 / 최근 분석 점수 낮은 순 / 높은 순 */
+  sort: 'default' | 'scoreAsc' | 'scoreDesc'
 }
 
 export const EMPTY_DETAIL_STATE: DetailUiState = {
@@ -33,6 +40,7 @@ export const EMPTY_DETAIL_STATE: DetailUiState = {
   search: '',
   selected: [],
   order: null,
+  sort: 'default',
 }
 
 interface Props {
@@ -117,6 +125,19 @@ export function TopicDetail({ topic, uiState, onUiStateChange, onUpdateMeta, onB
   /** 오른쪽 메모 패널에 보여 줄 질의 번호 (닫혀 있으면 null) */
   const [memoFor, setMemoFor] = useState<number | null>(null)
   const [memoEditing, setMemoEditing] = useState(false)
+  /** 오른쪽 패널: 질의 이전 기록 / 종합 기록 (메모 패널과 하나만 열림) */
+  const [historyFor, setHistoryFor] = useState<number | null>(null)
+  const [sessionsOpen, setSessionsOpen] = useState(false)
+  const toggleHistory = (i: number) => {
+    setMemoFor(null)
+    setSessionsOpen(false)
+    setHistoryFor((cur) => (cur === i ? null : i))
+  }
+  const toggleSessions = () => {
+    setMemoFor(null)
+    setHistoryFor(null)
+    setSessionsOpen((o) => !o)
+  }
   const state = uiState
   const set = (patch: Partial<DetailUiState>) => onUiStateChange({ ...state, ...patch })
 
@@ -143,7 +164,15 @@ export function TopicDetail({ topic, uiState, onUiStateChange, onUpdateMeta, onB
         if (keyword && !q.toLowerCase().includes(keyword) && !meta.memo.toLowerCase().includes(keyword)) return false
         return true
       })
-  }, [state.hardOnly, state.importance, state.memoOnly, state.search, topic.questionMeta, topic.questions])
+      .sort((a, b) => {
+        if (state.sort === 'default') return a.i - b.i
+        // 점수가 없는 질의는 맨 뒤
+        const sa = scoresOf(topic, a.q).at(-1)
+        const sb = scoresOf(topic, b.q).at(-1)
+        if (sa === undefined || sb === undefined) return (sa === undefined ? 1 : 0) - (sb === undefined ? 1 : 0) || a.i - b.i
+        return (state.sort === 'scoreAsc' ? sa - sb : sb - sa) || a.i - b.i
+      })
+  }, [state.hardOnly, state.importance, state.memoOnly, state.search, state.sort, topic])
 
   const filtering = state.importance.length > 0 || state.hardOnly || state.memoOnly || state.search.trim() !== ''
   const allVisibleSelected = visible.length > 0 && visible.every(({ q }) => selected.has(q))
@@ -168,6 +197,8 @@ export function TopicDetail({ topic, uiState, onUiStateChange, onUpdateMeta, onB
 
   /** 메모 버튼: 패널을 열고, 같은 질의를 다시 누르면 닫음. 메모가 없으면 바로 입력 상태 */
   const toggleMemo = (i: number) => {
+    setHistoryFor(null)
+    setSessionsOpen(false)
     if (memoFor === i) {
       setMemoFor(null)
       return
@@ -195,6 +226,9 @@ export function TopicDetail({ topic, uiState, onUiStateChange, onUpdateMeta, onB
           </div>
         </div>
         <div className="header-actions">
+          <button className={`btn ghost ${sessionsOpen ? 'on' : ''}`} onClick={toggleSessions} title="연습 세션별 종합 기록">
+            종합 기록 ({topic.sessionHistory?.length ?? 0})
+          </button>
           <button className="btn ghost" onClick={onEdit}>
             편집·설정
           </button>
@@ -266,8 +300,20 @@ export function TopicDetail({ topic, uiState, onUiStateChange, onUpdateMeta, onB
               />
               <span>{filtering ? `보이는 ${visible.length}개 전체 선택` : `전체 선택`}</span>
             </label>
-            <span className="muted">
-              {filtering ? `${topic.questions.length}개 중 ${visible.length}개` : `질의 ${topic.questions.length}개`}
+            <span className="q-list-tools">
+              <select
+                className="sort-select"
+                value={state.sort ?? 'default'}
+                onChange={(e) => set({ sort: e.target.value as DetailUiState['sort'] })}
+                aria-label="정렬"
+              >
+                <option value="default">기본 순서</option>
+                <option value="scoreAsc">분석 점수 낮은 순</option>
+                <option value="scoreDesc">분석 점수 높은 순</option>
+              </select>
+              <span className="muted">
+                {filtering ? `${topic.questions.length}개 중 ${visible.length}개` : `질의 ${topic.questions.length}개`}
+              </span>
             </span>
           </div>
 
@@ -288,6 +334,7 @@ export function TopicDetail({ topic, uiState, onUiStateChange, onUpdateMeta, onB
                     <span className="q-text" onClick={() => toggleSelect(q)}>
                       {q}
                     </span>
+                    <QuestionScore scores={scoresOf(topic, q)} open={historyFor === i} onClick={() => toggleHistory(i)} />
                     <StarRating value={meta.importance} onChange={(v) => patchMeta(q, { importance: v })} />
                     <button
                       className={`icon-btn flag-btn ${meta.hard ? 'on' : ''}`}
@@ -350,6 +397,12 @@ export function TopicDetail({ topic, uiState, onUiStateChange, onUpdateMeta, onB
             )}
           </aside>
         )}
+        {memoQuestion === null && historyFor !== null && topic.questions[historyFor] !== undefined && (
+          <QuestionHistoryPanel topic={topic} index={historyFor} onClose={() => setHistoryFor(null)} />
+        )}
+        {memoQuestion === null && historyFor === null && sessionsOpen && (
+          <SessionHistoryPanel topic={topic} onClose={() => setSessionsOpen(false)} />
+        )}
       </div>
 
       <footer className="start-bar">
@@ -392,5 +445,21 @@ export function TopicDetail({ topic, uiState, onUiStateChange, onUpdateMeta, onB
         </div>
       </footer>
     </div>
+  )
+}
+
+/** 질의별 최근 분석 점수 (누르면 이전 기록) */
+function QuestionScore({ scores, open, onClick }: { scores: number[]; open: boolean; onClick: () => void }) {
+  if (scores.length === 0) return null
+  const last = scores[scores.length - 1]
+  const tone = last >= 80 ? 'good' : last >= 60 ? 'mid' : 'low'
+  return (
+    <button
+      className={`q-score ${open ? 'open' : ''}`}
+      onClick={onClick}
+      title={`최근 분석 점수 (참고용) · 누르면 이전 기록 ${scores.length}회`}
+    >
+      <strong className={tone}>{last}</strong>
+    </button>
   )
 }
