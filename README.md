@@ -154,6 +154,24 @@ npm run dist:win        # Windows 설치 파일 (.exe, NSIS)
   - 정식으로 배포하려면 Developer ID 인증서로 서명하고 공증을 받아야 합니다. `electron-builder.yml`의 `identity: "-"` 줄을 지우면 키체인의 인증서로 서명합니다.
 - 앱 아이콘은 `build/icon.icns`(macOS), `build/icon.ico`(Windows)를 넣으면 자동으로 쓰입니다.
 
+### GitHub Actions로 릴리스
+
+`.github/workflows/release.yml`이 macOS·Windows 설치 파일을 만들어 GitHub Releases에 올립니다.
+
+```bash
+npm version patch --no-git-tag-version   # package.json 버전 올리기 (예: 0.1.0 → 0.1.1)
+git commit -am "chore: 0.1.1 릴리스"
+git tag v0.1.1
+git push && git push --tags
+```
+
+- 태그는 `package.json` 버전과 같아야 합니다(`v` + 버전). 다르면 빌드가 중단됩니다.
+- 테스트(`npm test`)를 통과해야 패키징합니다.
+- 결과물: `.dmg`·`.zip`(mac arm64·x64), `.exe`(Windows). 릴리스 노트는 커밋 목록으로 자동 생성됩니다.
+- Actions 탭에서 **Run workflow**로 직접 실행하면 릴리스 없이 빌드만 하고, 결과물은 실행 기록의 아티팩트로 받을 수 있습니다.
+- 비공개 저장소의 릴리스는 저장소 접근 권한이 있는 사람만 받을 수 있습니다.
+- 서명은 로컬과 같은 ad-hoc이라 받은 Mac에서는 Gatekeeper 경고, Windows에서는 SmartScreen 경고가 뜹니다.
+
 ## 구조
 
 | 경로 | 역할 |
